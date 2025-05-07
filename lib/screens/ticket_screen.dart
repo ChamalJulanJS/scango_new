@@ -42,7 +42,6 @@ class _TicketScreenState extends State<TicketScreen> {
   List<String> _busNumbers = [];
   List<String> _pickupLocations = [];
   bool _isLoading = true;
-  String? _errorMessage;
 
   @override
   void initState() {
@@ -74,17 +73,24 @@ class _TicketScreenState extends State<TicketScreen> {
         if (status == 'done' || status == 'notListening') {
           setState(() {
             _isListening = false;
-            _isProcessing = true;
           });
 
-          // Show processing state briefly
-          Future.delayed(const Duration(milliseconds: 1500), () {
-            if (mounted) {
-              setState(() {
-                _isProcessing = false;
-              });
-            }
-          });
+          // Only set processing state if we're not already processing (for Gemini)
+          // This prevents overriding the Gemini processing state
+          if (!_isProcessing) {
+            setState(() {
+              _isProcessing = true;
+            });
+
+            // Show processing state briefly, then reset
+            Future.delayed(const Duration(milliseconds: 1500), () {
+              if (mounted) {
+                setState(() {
+                  _isProcessing = false;
+                });
+              }
+            });
+          }
         }
       },
     );
@@ -141,10 +147,20 @@ class _TicketScreenState extends State<TicketScreen> {
 
   // Stop listening to speech
   void _stopListening() async {
-    await _speech.stop();
-    setState(() {
-      _isListening = false;
-    });
+    try {
+      await _speech.stop();
+      // Inform the user that listening has stopped
+      _showInfoSnackBar('Speech recognition stopped');
+    } catch (e) {
+      log('Error stopping speech recognition: $e');
+    } finally {
+      // Ensure the state is updated regardless of whether the stop call succeeded
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+        });
+      }
+    }
   }
 
   // Handle speech recognition results
@@ -165,17 +181,17 @@ class _TicketScreenState extends State<TicketScreen> {
 
   // Process Sinhala text with Gemini
   Future<void> _processSinhalaTextWithGemini(String sinhalaText) async {
+    // Make sure speech recognition is stopped
+    if (_isListening) {
+      _stopListening();
+    }
+
     setState(() {
       _isProcessing = true;
     });
 
     // Show a processing message to the user
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Processing your speech...'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    _showInfoSnackBar('Processing your speech...');
 
     try {
       // Simplified prompt that works better with Gemini API
@@ -204,13 +220,7 @@ Examples:
             _updateFieldsFromGeminiResponse(jsonResponse);
 
             // Show success message
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Information extracted successfully!'),
-                backgroundColor: AppTheme.greenColor,
-                duration: Duration(seconds: 2),
-              ),
-            );
+            _showSuccessSnackBar('Information extracted successfully!');
             return; // Success with text method
           }
         }
@@ -244,47 +254,24 @@ Examples:
             _updateFieldsFromGeminiResponse(jsonResponse);
 
             // Show success message
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Information extracted successfully!'),
-                backgroundColor: AppTheme.greenColor,
-                duration: Duration(seconds: 2),
-              ),
-            );
+            _showSuccessSnackBar('Information extracted successfully!');
           } else {
             log('Failed to extract JSON from Gemini response');
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('Could not extract information from speech'),
-                backgroundColor: AppTheme.redColor,
-                duration: Duration(seconds: 2),
-              ),
-            );
+            _showErrorSnackBar('Could not extract information from speech');
           }
         } catch (e) {
           log('Error parsing Gemini response: $e');
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error parsing response: $e'),
-              backgroundColor: AppTheme.redColor,
-              duration: Duration(seconds: 2),
-            ),
-          );
+          _showErrorSnackBar('Error parsing response: $e');
         }
       }
     } catch (e) {
       log('Error processing with Gemini: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error processing with AI: $e'),
-          backgroundColor: AppTheme.redColor,
-          duration: Duration(seconds: 2),
-        ),
-      );
+      _showErrorSnackBar('Error processing with AI: $e');
     } finally {
       if (mounted) {
         setState(() {
           _isProcessing = false;
+          _isListening = false;
         });
       }
     }
@@ -365,6 +352,10 @@ Examples:
             jsonResponse['seats'] != null) {
           _seatCountController.text = jsonResponse['seats'].toString();
         }
+
+        // Ensure both listening and processing states are turned off
+        _isListening = false;
+        _isProcessing = false;
       });
     }
   }
@@ -373,7 +364,6 @@ Examples:
   Future<void> _fetchBusNumbers() async {
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     try {
@@ -388,8 +378,8 @@ Examples:
         _isLoading = false;
       });
     } catch (e) {
+      _showErrorSnackBar('Failed to load bus numbers: ${e.toString()}');
       setState(() {
-        _errorMessage = 'Failed to load bus numbers: ${e.toString()}';
         _isLoading = false;
       });
     }
@@ -399,7 +389,6 @@ Examples:
   Future<void> _fetchPickupLocations(String busNumber) async {
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
       _pickupLocations = [];
       _selectedPickupLocation = null;
     });
@@ -419,14 +408,14 @@ Examples:
           _isLoading = false;
         });
       } else {
+        _showErrorSnackBar('Bus routes not found');
         setState(() {
-          _errorMessage = 'Bus routes not found';
           _isLoading = false;
         });
       }
     } catch (e) {
+      _showErrorSnackBar('Failed to load pickup locations: ${e.toString()}');
       setState(() {
-        _errorMessage = 'Failed to load pickup locations: ${e.toString()}';
         _isLoading = false;
       });
     }
@@ -442,28 +431,28 @@ Examples:
   Future<void> _submitTicket() async {
     // Validate inputs
     if (_selectedBusNumber == null) {
-      _showError('Please select a bus number');
+      _showErrorSnackBar('Please select a bus number');
       return;
     }
 
     if (_selectedPickupLocation == null) {
-      _showError('Please select a pickup location');
+      _showErrorSnackBar('Please select a pickup location');
       return;
     }
 
     if (_destinationController.text.isEmpty) {
-      _showError('Please enter a destination');
+      _showErrorSnackBar('Please enter a destination');
       return;
     }
 
     if (_seatCountController.text.isEmpty) {
-      _showError('Please enter the number of seats');
+      _showErrorSnackBar('Please enter the number of seats');
       return;
     }
 
     final seatCount = int.tryParse(_seatCountController.text);
     if (seatCount == null || seatCount <= 0) {
-      _showError('Please enter a valid seat count');
+      _showErrorSnackBar('Please enter a valid seat count');
       return;
     }
 
@@ -472,22 +461,16 @@ Examples:
     // Show processing state
     setState(() {
       _isLoading = true;
-      _errorMessage = null;
     });
 
     // Show a processing message to the user
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Processing your ticket...'),
-        duration: Duration(seconds: 1),
-      ),
-    );
+    _showInfoSnackBar('Processing your ticket...');
 
     try {
       // Get current user ID
       final userId = _authService.currentUser?.uid;
       if (userId == null) {
-        _showError('User not authenticated');
+        _showErrorSnackBar('User not authenticated');
         setState(() {
           _isLoading = false;
         });
@@ -507,13 +490,7 @@ Examples:
       });
 
       // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Ticket created successfully!'),
-          backgroundColor: AppTheme.greenColor,
-          duration: Duration(seconds: 1),
-        ),
-      );
+      _showSuccessSnackBar('Ticket created successfully!');
 
       // Use addPostFrameCallback to navigate after the current frame completes
       // This prevents ScrollController not attached errors
@@ -537,22 +514,23 @@ Examples:
         });
       }
     } catch (e) {
-      _showError('Failed to submit ticket: ${e.toString()}');
+      _showErrorSnackBar('Failed to submit ticket: ${e.toString()}');
       setState(() {
         _isLoading = false;
       });
     }
   }
 
-  void _showError(String message) {
-    setState(() {
-      _errorMessage = message;
-    });
+  // Shows error as SnackBar without updating _errorMessage state
+  void _showErrorSnackBar(String message) {
+    // Clear any existing SnackBars
+    ScaffoldMessenger.of(context).clearSnackBars();
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
         backgroundColor: AppTheme.redColor,
+        duration: const Duration(seconds: 2),
       ),
     );
   }
@@ -582,7 +560,7 @@ Examples:
                               children: [
                                 InkWell(
                                   onTap: _isProcessing
-                                      ? null
+                                      ? null // Disable while processing
                                       : (_isListening
                                           ? _stopListening
                                           : _startListening),
@@ -811,22 +789,6 @@ Examples:
                             ),
                           const SizedBox(height: 30),
 
-                          // Error message display
-                          if (_errorMessage != null)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(10.0),
-                              decoration: BoxDecoration(
-                                color: AppTheme.redColor.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(10.0),
-                              ),
-                              child: Text(
-                                _errorMessage!,
-                                style: TextStyle(color: AppTheme.redColor),
-                                textAlign: TextAlign.center,
-                              ),
-                            ),
-
                           // Checkout Button
                           Row(
                             mainAxisAlignment: MainAxisAlignment.center,
@@ -892,27 +854,6 @@ Examples:
                               ),
                             ],
                           ),
-                        ),
-                      ),
-                    ),
-
-                  // Error message overlay
-                  if (!_isLoading && _errorMessage != null)
-                    Positioned(
-                      top: 0,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        color: AppTheme.redColor.withOpacity(0.9),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 8),
-                        child: Text(
-                          _errorMessage!,
-                          style:
-                              Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                    color: Colors.white,
-                                  ),
-                          textAlign: TextAlign.center,
                         ),
                       ),
                     ),
@@ -993,5 +934,32 @@ Examples:
         log('Failed to initialize Gemini: $e');
       }
     }
+  }
+
+  // Shows success message as SnackBar
+  void _showSuccessSnackBar(String message) {
+    // Clear any existing SnackBars
+    ScaffoldMessenger.of(context).clearSnackBars();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.greenColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // Shows info message as SnackBar (neutral information)
+  void _showInfoSnackBar(String message) {
+    // Clear any existing SnackBars
+    ScaffoldMessenger.of(context).clearSnackBars();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 1),
+      ),
+    );
   }
 }
