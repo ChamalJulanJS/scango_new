@@ -46,6 +46,7 @@ dependencies:
   cloud_firestore: ^5.6.7
   firebase_storage: ^12.4.5
   speech_to_text: ^7.0.0
+  flutter_gemini: ^3.0.0
 
 dev_dependencies:
   flutter_test:
@@ -84,7 +85,7 @@ flutter:
   # "family" key with the font family name, and a "fonts" key with a
   # list giving the asset and other descriptors for the font. For
   # example:
-  
+
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package

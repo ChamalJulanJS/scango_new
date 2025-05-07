@@ -14,12 +14,27 @@ import 'screens/edit_profile_screen.dart';
 import 'screens/edit_pin_screen.dart';
 import 'theme/app_theme.dart';
 import 'utils/constants.dart';
+import 'utils/config.dart';
+import 'package:flutter_gemini/flutter_gemini.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize Firebase
   await FirebaseService.initializeFirebase();
+
+  // Initialize Gemini API
+  if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
+    print(
+        '⚠️ WARNING: Default Gemini API key detected. Please replace with your actual API key in lib/utils/config.dart');
+  }
+
+  try {
+    Gemini.init(apiKey: AppConfig.geminiApiKey);
+    print('✓ Gemini initialized successfully');
+  } catch (e) {
+    print('❌ Failed to initialize Gemini: $e');
+  }
 
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,

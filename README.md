@@ -1,134 +1,84 @@
-# ScaNGo - Bus Ticketing App
+# scaNGo - Bus Ticketing App
 
-A Flutter mobile application for bus ticketing based on Figma designs.
+A Flutter mobile application for bus ticketing with speech recognition and AI-powered natural language processing.
 
 ## Features
 
-- User authentication (Login, Sign Up, PIN creation)
-- Add Bus Management
-- Ticket Purchase Flow
-- Trip History
-- User Profile Management
+- User authentication with Firebase
+- Bus ticket booking
+- Payment processing
+- Speech recognition in Sinhala
+- AI-powered text extraction and translation using Google Gemini
+- Ticket history tracking
 
-## Firebase Integration
+## Speech Recognition Feature
 
-This project now has Firebase integrated for authentication, database, and storage. The Firebase configuration has been migrated from the RP-2025 project.
+The app includes a powerful speech recognition feature that:
 
-### Firebase Services Used
-
-- **Firebase Authentication**: For user registration, login, and authentication state management
-- **Cloud Firestore**: For storing user profiles, bus information, and ticket data
-- **Firebase Storage**: For storing user profile images and other assets
-
-### Setup Instructions
-
-To run this project with Firebase, you'll need to:
-
-1. **Create a Firebase project** in the [Firebase Console](https://console.firebase.google.com/)
-2. **Register your app** (both Android and iOS) with Firebase
-3. **Download the configuration files**:
-   - For Android: `google-services.json` and place it in the `android/app/` directory
-   - For iOS: `GoogleService-Info.plist` and place it in the `ios/Runner/` directory
-4. **Update Firebase configuration** in `lib/services/firebase_service.dart` with your Firebase project details
-
-### Firebase Configuration
-
-The Firebase configuration is initialized in the `firebase_service.dart` file. Make sure to update the following values with your own Firebase project details:
-
-```dart
-static Future<void> initializeFirebase() async {
-  await Firebase.initializeApp(
-    options: const FirebaseOptions(
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_AUTH_DOMAIN",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_STORAGE_BUCKET",
-      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-      appId: "YOUR_APP_ID",
-      measurementId: "YOUR_MEASUREMENT_ID",
-    ),
-  );
-}
-```
-
-### Data Models
-
-The following models have been created to work with Firebase:
-
-- `UserModel`: For storing user profile information
-- `BusModel`: For storing bus information
-- `TicketModel`: For storing ticket information
-
-### Authentication
-
-The app uses Firebase Authentication for user management. The following features are implemented:
-
-- User registration with email and password
-- User login with email and password
-- Profile management
-- Password reset
-
-### Firestore Database
-
-The app uses Cloud Firestore for storing data with the following collections:
-
-- `users`: For user profiles
-- `buses`: For bus information
-- `tickets`: For ticket information
+- Listens to user speech in Sinhala
+- Transcribes the speech to text
+- Uses Google Gemini to extract relevant information (destination city and seat count)
+- Automatically populates the booking form fields
 
 ## Setup Instructions
 
-1. Clone the repository
-2. Install Flutter (https://flutter.dev/docs/get-started/install)
-3. Get dependencies:
+### 1. Firebase Setup
 
+- Create a Firebase project
+- Add Android and iOS apps to your Firebase project
+- Download and place the configuration files (google-services.json and GoogleService-Info.plist)
+- Enable Authentication, Firestore, and Storage services
+
+### 2. Google Gemini API Key
+
+- Sign up for a Google Gemini API key at https://aistudio.google.com/
+- Open `lib/utils/config.dart` and replace the placeholder value with your actual API key:
+
+```dart
+static const String geminiApiKey = 'YOUR_ACTUAL_GEMINI_API_KEY';
 ```
+
+### 3. Install Dependencies
+
+```bash
 flutter pub get
 ```
 
-4. Configure Firebase as described above
-5. Run the app:
+### 4. Run the App
 
-```
+```bash
 flutter run
 ```
 
-## Requirements
+## Troubleshooting
 
-- Flutter 3.6.1 or higher
-- Dart 3.0.0 or higher
+### Gemini API Error (400 Status Code)
 
-## Font Requirements
+If you encounter errors like:
 
-This project uses custom fonts:
+```
+Error processing with Gemini: GeminiException ... status code of 400
+```
 
-- Konkhmer Sleokchher
-- ADLaM Display
-- Tiro Bangla
+Try the following:
 
-You'll need to download these fonts and place them in the `assets/fonts` directory before running the app.
+1. **Check your API key**: Make sure you have a valid Gemini API key in `lib/utils/config.dart`
+2. **Enable the API**: Ensure you've enabled the Gemini API in your Google Cloud/AI Studio project
+3. **API Key Permissions**: Verify your API key has the necessary permissions to use Gemini
+4. **Clean and rebuild**: Run `flutter clean` followed by `flutter pub get` and try again
+5. **Check Network**: Ensure your device has internet connectivity
 
-## Credits
+For speech recognition to work properly, make sure your device has the appropriate permissions enabled for microphone access.
 
-UI Design from Figma - scaNGo
+## Usage
 
-## Getting Started
+1. Select a bus number
+2. Tap the microphone button and speak in Sinhala
+   - Example: "මට කොළඹට යන්න ඕනෙ, ආසන තුනක් වෙන් කරන්න" (I want to go to Colombo, reserve three seats)
+3. The app will automatically populate the destination and seat count fields
+4. Select a pickup location
+5. Complete the booking process
 
-To run this project:
+## License
 
-1. Install dependencies: `flutter pub get`
-2. Configure Firebase as described above
-3. Run the app: `flutter run`
-
-## Flutter Development
-
-This project is a starting point for a Flutter application.
-
-A few resources to get you started if this is your first Flutter project:
-
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
-
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+[MIT License](LICENSE)

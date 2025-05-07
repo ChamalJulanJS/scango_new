@@ -8,6 +8,9 @@ import '../utils/constants.dart';
 import '../widgets/common_widgets.dart';
 import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+import 'package:flutter_gemini/flutter_gemini.dart';
+import 'dart:convert';
+import '../utils/config.dart';
 
 class TicketScreen extends StatefulWidget {
   const TicketScreen({super.key});
@@ -25,6 +28,8 @@ class _TicketScreenState extends State<TicketScreen> {
   bool _isProcessing = false;
   String _lastWords = '';
   bool _speechEnabled = false;
+  // Gemini instance
+  final Gemini _gemini = Gemini.instance;
 
   String? _selectedBusNumber;
   String? _selectedPickupLocation;
@@ -44,6 +49,7 @@ class _TicketScreenState extends State<TicketScreen> {
     super.initState();
     _fetchBusNumbers();
     _initSpeech();
+    _initGemini();
   }
 
   @override
@@ -150,10 +156,216 @@ class _TicketScreenState extends State<TicketScreen> {
     // Log the transcribed text
     log('Transcribed text: ${result.recognizedWords}');
 
-    // If the speech result is final, you can decide what to do with it
-    if (result.finalResult) {
-      // For now, just log it, but later you can use it to populate fields
+    // If the speech result is final, process it with Gemini
+    if (result.finalResult && result.recognizedWords.isNotEmpty) {
       log('FINAL result: ${result.recognizedWords}');
+      _processSinhalaTextWithGemini(result.recognizedWords);
+    }
+  }
+
+  // Process Sinhala text with Gemini
+  Future<void> _processSinhalaTextWithGemini(String sinhalaText) async {
+    setState(() {
+      _isProcessing = true;
+    });
+
+    // Show a processing message to the user
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Processing your speech...'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+
+    try {
+      // Simplified prompt that works better with Gemini API
+      final String systemPrompt = """
+Extract the city name and number of seats from this Sinhala text.
+Return as JSON with "city" in English and "seats" as a number.
+If not found, use null.
+Examples:
+"මට කොළඹට යන්න ඕනෙ, ආසන තුනක් වෙන් කරන්න" → {"city": "Colombo", "seats": 3}
+"ගාල්ලට ආසන දෙකක් වෙන් කරන්න" → {"city": "Galle", "seats": 2}
+"මහනුවර" → {"city": "Kandy", "seats": null}
+""";
+
+      // First try a text-only approach which is more reliable for Gemini
+      try {
+        final prompt = "$systemPrompt\nText: $sinhalaText\nJSON:";
+        final response = await _gemini.text(prompt);
+
+        if (response != null && response.output != null) {
+          log('Gemini text response: ${response.output}');
+
+          // Try to parse JSON from the response
+          final jsonResponse = _extractJsonFromResponse(response.output!);
+          if (jsonResponse != null) {
+            // Update UI with extracted information
+            _updateFieldsFromGeminiResponse(jsonResponse);
+
+            // Show success message
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Information extracted successfully!'),
+                backgroundColor: AppTheme.greenColor,
+                duration: Duration(seconds: 2),
+              ),
+            );
+            return; // Success with text method
+          }
+        }
+      } catch (e) {
+        log('Text method failed, trying chat method: $e');
+      }
+
+      // If text method fails, try chat method as fallback
+      final content = [
+        Content(
+          parts: [Part.text(systemPrompt)],
+          role: 'user',
+        ),
+        Content(
+          parts: [Part.text("Text: $sinhalaText\nJSON:")],
+          role: 'model',
+        ),
+      ];
+
+      // Call Gemini API
+      final response = await _gemini.chat(content);
+
+      if (response != null && response.output != null) {
+        log('Gemini chat response: ${response.output}');
+
+        try {
+          // Try to parse JSON from the response
+          final jsonResponse = _extractJsonFromResponse(response.output!);
+          if (jsonResponse != null) {
+            // Update UI with extracted information
+            _updateFieldsFromGeminiResponse(jsonResponse);
+
+            // Show success message
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Information extracted successfully!'),
+                backgroundColor: AppTheme.greenColor,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          } else {
+            log('Failed to extract JSON from Gemini response');
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Could not extract information from speech'),
+                backgroundColor: AppTheme.redColor,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
+        } catch (e) {
+          log('Error parsing Gemini response: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error parsing response: $e'),
+              backgroundColor: AppTheme.redColor,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      log('Error processing with Gemini: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error processing with AI: $e'),
+          backgroundColor: AppTheme.redColor,
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+        });
+      }
+    }
+  }
+
+  // Extract JSON from Gemini's text response
+  Map<String, dynamic>? _extractJsonFromResponse(String response) {
+    try {
+      // First try to directly parse the entire response as JSON
+      try {
+        return json.decode(response) as Map<String, dynamic>;
+      } catch (_) {
+        // If that fails, try to extract JSON using regex
+      }
+
+      // Look for JSON pattern in the response using regex
+      final RegExp jsonRegExp = RegExp(r'{[\s\S]*}');
+      final Match? match = jsonRegExp.firstMatch(response);
+
+      if (match != null) {
+        final String jsonString = match.group(0)!;
+        return json.decode(jsonString) as Map<String, dynamic>;
+      }
+
+      // If no JSON pattern found with regex, look for key-value pattern
+      if (response.contains('"city"') && response.contains('"seats"')) {
+        // Try to construct a valid JSON from the response
+        String cleanedResponse =
+            response.replaceAll(RegExp(r'\s+'), ' ').trim();
+        // Create a simple JSON structure
+        if (!cleanedResponse.startsWith('{'))
+          cleanedResponse = '{$cleanedResponse';
+        if (!cleanedResponse.endsWith('}'))
+          cleanedResponse = '$cleanedResponse}';
+
+        return json.decode(cleanedResponse) as Map<String, dynamic>;
+      }
+
+      // Last resort: extract values manually
+      final RegExp cityRegExp = RegExp(r'"city"\s*:\s*"([^"]+)"');
+      final RegExp seatsRegExp = RegExp(r'"seats"\s*:\s*(\d+|null)');
+
+      final cityMatch = cityRegExp.firstMatch(response);
+      final seatsMatch = seatsRegExp.firstMatch(response);
+
+      if (cityMatch != null || seatsMatch != null) {
+        final result = <String, dynamic>{};
+        if (cityMatch != null) {
+          result['city'] = cityMatch.group(1);
+        }
+        if (seatsMatch != null) {
+          final seatsValue = seatsMatch.group(1);
+          result['seats'] =
+              seatsValue == 'null' ? null : int.parse(seatsValue!);
+        }
+        return result;
+      }
+
+      log('Could not extract JSON from: $response');
+      return null;
+    } catch (e) {
+      log('JSON extraction error: $e');
+      return null;
+    }
+  }
+
+  // Update form fields from Gemini response
+  void _updateFieldsFromGeminiResponse(Map<String, dynamic> jsonResponse) {
+    if (mounted) {
+      setState(() {
+        // Update destination field if city is available
+        if (jsonResponse.containsKey('city') && jsonResponse['city'] != null) {
+          _destinationController.text = jsonResponse['city'].toString();
+        }
+
+        // Update seat count field if seats is available
+        if (jsonResponse.containsKey('seats') &&
+            jsonResponse['seats'] != null) {
+          _seatCountController.text = jsonResponse['seats'].toString();
+        }
+      });
     }
   }
 
@@ -410,10 +622,10 @@ class _TicketScreenState extends State<TicketScreen> {
                                 const SizedBox(height: 8),
                                 Text(
                                   _isProcessing
-                                      ? "Processing..."
+                                      ? "Processing speech with AI..."
                                       : _isListening
                                           ? "Listening in Sinhala..."
-                                          : "Tap to talk",
+                                          : "Tap to speak destination & seats",
                                   style: Theme.of(context)
                                       .textTheme
                                       .bodyMedium
@@ -436,18 +648,34 @@ class _TicketScreenState extends State<TicketScreen> {
                                             color: AppTheme.accentColor
                                                 .withOpacity(0.3)),
                                       ),
-                                      child: Text(
-                                        _lastWords,
-                                        style: Theme.of(context)
-                                            .textTheme
-                                            .bodyMedium
-                                            ?.copyWith(
-                                              color: AppTheme.accentColor,
-                                              fontStyle: _isListening
-                                                  ? FontStyle.italic
-                                                  : FontStyle.normal,
-                                            ),
-                                        textAlign: TextAlign.center,
+                                      child: Column(
+                                        children: [
+                                          Text(
+                                            'Transcribed Sinhala:',
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(
+                                                  color: AppTheme.accentColor
+                                                      .withOpacity(0.7),
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            _lastWords,
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: AppTheme.accentColor,
+                                                  fontStyle: _isListening
+                                                      ? FontStyle.italic
+                                                      : FontStyle.normal,
+                                                ),
+                                            textAlign: TextAlign.center,
+                                          ),
+                                        ],
                                       ),
                                     ),
                                   ),
@@ -741,5 +969,29 @@ class _TicketScreenState extends State<TicketScreen> {
         _destinationController.text.isNotEmpty &&
         _seatCountController.text.isNotEmpty &&
         (int.tryParse(_seatCountController.text) ?? 0) > 0;
+  }
+
+  // Initialize Gemini
+  void _initGemini() {
+    try {
+      // This ensures Gemini is initialized properly
+      if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
+        log('WARNING: Using default Gemini API key. Replace with your actual key in config.dart');
+      }
+
+      // Test if Gemini is already initialized
+      final gemini = Gemini.instance;
+      log('Gemini initialized successfully in TicketScreen');
+    } catch (e) {
+      log('Error initializing Gemini: $e');
+
+      // Try to initialize with the API key
+      try {
+        Gemini.init(apiKey: AppConfig.geminiApiKey);
+        log('Gemini initialized in TicketScreen');
+      } catch (e) {
+        log('Failed to initialize Gemini: $e');
+      }
+    }
   }
 }
