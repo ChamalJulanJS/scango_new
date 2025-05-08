@@ -5,97 +5,274 @@ import 'add_bus_screen.dart';
 import 'ticket_screen.dart';
 import 'history_screen.dart';
 import 'profile_screen.dart';
+import '../utils/constants.dart';
+import 'verify_pin_screen.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTab;
+  final String? busNumber;
+  final String? pickupLocation;
 
   const MainScreen({
     super.key,
     this.initialTab = 0,
+    this.busNumber,
+    this.pickupLocation,
   });
 
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen>
-    with SingleTickerProviderStateMixin {
+class _MainScreenState extends State<MainScreen> {
+  // Current tab index
   late int _currentIndex;
-  late PageController _pageController;
 
-  // Keep track of tabs that have been instantiated
-  final List<bool> _instantiatedTabs = [true, false, false, false, false];
+  // Bus info
+  String? _busNumber;
+  String? _pickupLocation;
 
-  final List<Widget> _pages = [
-    const HomeScreen(),
-    const AddBusScreen(),
-    const TicketScreen(),
-    const HistoryScreen(),
-    const ProfileScreen(),
-  ];
+  // Define tabs that require PIN verification
+  final Set<int> _pinProtectedTabs = {1, 3, 4}; // Add Bus, History, Profile
+
+  // Flag to prevent initial PIN check when returning from PIN verification
+  bool _initialPinCheckDone = false;
+
+  // Flag to prevent navigation issues with dropdowns
+  bool _isTabSwitching = false;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.initialTab;
-    // Mark the initial tab as instantiated
-    for (int i = 0; i < _instantiatedTabs.length; i++) {
-      _instantiatedTabs[i] = i == _currentIndex;
+    _busNumber = widget.busNumber;
+    _pickupLocation = widget.pickupLocation;
+
+    // If the initialTab requires PIN verification and we're starting there,
+    // we need to verify PIN first, but we'll do this after the widget is built
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkInitialTabProtection();
+    });
+  }
+
+  void _checkInitialTabProtection() {
+    // Only check on initial launch, not when returning from PIN verification
+    if (!_initialPinCheckDone && _pinProtectedTabs.contains(_currentIndex)) {
+      _initialPinCheckDone = true; // Mark check as done
+
+      // Set tab switching flag to prevent dropdown interactions
+      setState(() {
+        _isTabSwitching = true;
+      });
+
+      // Create arguments for the target tab
+      final Map<String, dynamic> targetArgs = {'initialTab': _currentIndex};
+
+      // Include bus/pickup info if available
+      if (_busNumber != null) {
+        targetArgs['busNumber'] = _busNumber;
+      }
+      if (_pickupLocation != null) {
+        targetArgs['pickupLocation'] = _pickupLocation;
+      }
+
+      // Create arguments for VerifyPinScreen
+      final Map<String, dynamic> verifyPinArgs = {
+        'targetRoute': AppConstants.mainRoute,
+        'arguments': targetArgs,
+      };
+
+      print(
+          'DEBUG: Initial tab requires PIN. Showing verification for tab: $_currentIndex');
+
+      // Reset tab switching flag after a short delay
+      Future.delayed(Duration(milliseconds: 300), () {
+        if (mounted) {
+          setState(() {
+            _isTabSwitching = false;
+          });
+        }
+      });
+
+      // Use pushReplacementNamed for consistent navigation behavior
+      Navigator.pushReplacementNamed(
+        context,
+        AppConstants.verifyPinRoute,
+        arguments: verifyPinArgs,
+      );
     }
-    _pageController = PageController(initialPage: _currentIndex);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
 
-    // Check if we have arguments with initialTab
+    // Check if we have arguments
     final args = ModalRoute.of(context)?.settings.arguments;
-    if (args != null &&
-        args is Map<String, dynamic> &&
-        args.containsKey('initialTab')) {
+    if (args != null && args is Map<String, dynamic>) {
+      // Mark initial check as done since we're returning from another screen
+      _initialPinCheckDone = true;
+
+      _handleNavigationArguments(args);
+
+      // Debug: Print which tab we're currently on after navigation
+      print('DEBUG: Current tab index after navigation: $_currentIndex');
+    }
+  }
+
+  // Handle navigation arguments
+  void _handleNavigationArguments(Map<String, dynamic> args) {
+    bool needUpdate = false;
+
+    if (args.containsKey('initialTab')) {
       final newTab = args['initialTab'] as int;
-      if (newTab != _currentIndex) {
-        setState(() {
-          _currentIndex = newTab;
-          _pageController.jumpToPage(newTab);
-        });
+      print(
+          'DEBUG: Attempting to navigate to tab: $newTab (current: $_currentIndex)');
+
+      // Always update the current index if it's provided in the arguments
+      if (_currentIndex != newTab) {
+        _currentIndex = newTab;
+        needUpdate = true;
       }
+    }
+
+    // Handle the bus number and pickup location
+    if (args.containsKey('busNumber')) {
+      _busNumber = args['busNumber'] as String;
+      needUpdate = true;
+    }
+
+    if (args.containsKey('pickupLocation')) {
+      _pickupLocation = args['pickupLocation'] as String;
+      needUpdate = true;
+    }
+
+    // Debug print to verify values
+    print(
+        'DEBUG: Navigation with busNumber: $_busNumber, pickupLocation: $_pickupLocation');
+
+    if (needUpdate) {
+      // Force rebuild
+      setState(() {
+        _isTabSwitching = true;
+
+        // Reset the flag after a short delay to allow the widget to rebuild
+        Future.delayed(Duration(milliseconds: 300), () {
+          if (mounted) {
+            setState(() {
+              _isTabSwitching = false;
+            });
+          }
+        });
+      });
+    }
+  }
+
+  // Navigate to tab with PIN protection if needed
+  void _navigateToTab(int index) {
+    // Set tab switching flag to prevent dropdown interactions
+    setState(() {
+      _isTabSwitching = true;
+    });
+
+    print(
+        'DEBUG: Attempting to navigate from tab $_currentIndex to tab $index');
+
+    // Check if tab requires PIN verification
+    if (_pinProtectedTabs.contains(index) && index != _currentIndex) {
+      // Create arguments for the target tab
+      final targetArgs = <String, dynamic>{
+        'initialTab': index,
+      };
+
+      // Include bus/pickup info if available
+      if (_busNumber != null) {
+        targetArgs['busNumber'] = _busNumber;
+      }
+      if (_pickupLocation != null) {
+        targetArgs['pickupLocation'] = _pickupLocation;
+      }
+
+      // Create arguments for VerifyPinScreen
+      final verifyPinArgs = <String, dynamic>{
+        'targetRoute': AppConstants.mainRoute,
+        'arguments': targetArgs,
+      };
+
+      print('DEBUG: Tab requires PIN. Showing verification for tab: $index');
+
+      // Reset tab switching flag after a short delay, even if we're navigating away
+      Future.delayed(Duration(milliseconds: 300), () {
+        if (mounted) {
+          setState(() {
+            _isTabSwitching = false;
+          });
+        }
+      });
+
+      // Use pushNamed instead of pushing a new route to maintain proper navigation stack
+      Navigator.pushReplacementNamed(
+        context,
+        AppConstants.verifyPinRoute,
+        arguments: verifyPinArgs,
+      );
+    } else {
+      // Navigate directly to the tab
+      print('DEBUG: No PIN required. Directly navigating to tab: $index');
+      setState(() {
+        _currentIndex = index;
+
+        // Reset tab switching flag after a short delay
+        Future.delayed(Duration(milliseconds: 300), () {
+          if (mounted) {
+            setState(() {
+              _isTabSwitching = false;
+            });
+          }
+        });
+      });
     }
   }
 
   @override
-  void dispose() {
-    _pageController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    print('DEBUG: Building MainScreen with currentIndex: $_currentIndex');
+
+    // Rebuild the pages each time build is called to ensure latest parameters are used
+    final pages = [
+      const HomeScreen(),
+      const AddBusScreen(),
+      TicketScreen(
+        initialBusNumber: _busNumber,
+        initialPickupLocation: _pickupLocation,
+      ),
+      const HistoryScreen(),
+      const ProfileScreen(),
+    ];
+
     return Scaffold(
-      body: PageView(
-        controller: _pageController,
-        physics: const NeverScrollableScrollPhysics(), // Disable swiping
-        children: _pages,
-        onPageChanged: (index) {
-          setState(() {
-            _currentIndex = index;
-            _instantiatedTabs[index] = true; // Mark this tab as instantiated
-          });
-        },
+      body: Stack(
+        children: [
+          IndexedStack(
+            index: _currentIndex,
+            children: pages,
+          ),
+          // Add modal barrier during tab switching to prevent dropdown interactions
+          if (_isTabSwitching)
+            ModalBarrier(
+              color: Colors.black.withOpacity(0.01),
+              dismissible: false,
+            ),
+        ],
       ),
       bottomNavigationBar: CustomBottomNavigationBar(
         currentIndex: _currentIndex,
         onTap: (index) {
-          // Don't animate if tapping the current tab
-          if (index == _currentIndex) return;
+          // Don't animate if tapping the current tab or if we're already switching
+          if (index == _currentIndex || _isTabSwitching) return;
 
-          setState(() {
-            _currentIndex = index;
-            // Use jumpToPage instead of animate for immediate switching
-            // This prevents transitioning through all screens
-            _pageController.jumpToPage(index);
-          });
+          // Use PIN protection for certain tabs
+          _navigateToTab(index);
         },
       ),
     );

@@ -139,59 +139,91 @@ class DataService {
         .snapshots();
   }
 
-  // Get all tickets for a specific date and optionally filtered by bus number
+  // Get all tickets for a specific date and optionally filtered by bus number (only for current user's buses)
   Stream<QuerySnapshot> getTicketsByDateAndBus({
     required DateTime date,
     String? busNumber,
   }) {
+    final String? userId = _authService.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
     // Create start and end of the selected day for timestamp comparison
     final startOfDay = DateTime(date.year, date.month, date.day);
     final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
 
-    // Start with base query filtering by date using timestamp field
-    Query query = ticketsCollection
-        .where('timestamp',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
-        .where('timestamp', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay));
-
-    // Add bus number filter if provided
+    // If specific bus number is provided, check if it belongs to the user
     if (busNumber != null && busNumber.isNotEmpty) {
-      query = query.where('busNumber', isEqualTo: busNumber);
-    }
+      // Return tickets for the specific bus and date
+      return ticketsCollection
+          .where('timestamp',
+              isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+          .where('timestamp', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
+          .where('busNumber', isEqualTo: busNumber)
+          .snapshots();
+    } else {
+      // For all user's buses, this is more complex
+      // We'll need to get the user's buses first, then use the list in a query
+      // This is a workaround using two separate queries
 
-    return query.snapshots();
+      // Return a stream that first fetches the user's buses, then uses that to filter tickets
+      return Stream.fromFuture(
+              busesCollection.where('userId', isEqualTo: userId).get())
+          .asyncExpand((busSnapshot) {
+        // Extract bus numbers owned by the current user
+        final userBusNumbers = busSnapshot.docs
+            .map((doc) =>
+                (doc.data() as Map<String, dynamic>)['busNumber'] as String)
+            .toList();
+
+        if (userBusNumbers.isEmpty) {
+          // If user has no buses, return empty result - use limit(1) and add a filter that will never match
+          // instead of limit(0) which causes an assertion error
+          return ticketsCollection
+              .where('busNumber',
+                  isEqualTo: 'NO_BUSES_FAKE_ID_TO_ENSURE_NO_RESULTS')
+              .limit(1)
+              .snapshots();
+        }
+
+        // Otherwise, filter by all of the user's buses
+        return ticketsCollection
+            .where('timestamp',
+                isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+            .where('timestamp',
+                isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
+            .where('busNumber', whereIn: userBusNumbers)
+            .snapshots();
+      });
+    }
   }
 
-  // Get all bus numbers for populating the dropdown
+  // Get all bus numbers for populating the dropdown (only for current user)
   Future<List<String>> getAllBusNumbers() async {
-    final Set<String> busNumbersSet = {};
+    final String? userId = _authService.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
 
     try {
-      // Get bus numbers from Buses collection
-      final busesSnapshot = await busesCollection.get();
-      for (var doc in busesSnapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>?;
-        final busNumber = data?['busNumber'] as String?;
-        if (busNumber != null && busNumber.isNotEmpty) {
-          busNumbersSet.add(busNumber);
-        }
-      }
+      // Get bus numbers from Buses collection where user is the owner
+      final busesSnapshot =
+          await busesCollection.where('userId', isEqualTo: userId).get();
 
-      // Also get bus numbers from Ticket collection
-      final ticketsSnapshot = await ticketsCollection.get();
-      for (var doc in ticketsSnapshot.docs) {
-        final data = doc.data() as Map<String, dynamic>?;
-        final busNumber = data?['busNumber'] as String?;
-        if (busNumber != null && busNumber.isNotEmpty) {
-          busNumbersSet.add(busNumber);
-        }
-      }
+      // Extract and sort bus numbers
+      final busNumbers = busesSnapshot.docs
+          .map((doc) =>
+              (doc.data() as Map<String, dynamic>)['busNumber'] as String)
+          .toList()
+        ..sort();
+
+      return busNumbers;
     } catch (e) {
       // Handle any errors
       print('Error getting bus numbers: $e');
+      return [];
     }
-
-    return busNumbersSet.toList()..sort();
   }
 
   Future<void> markTicketAsUsed(String ticketId) async {

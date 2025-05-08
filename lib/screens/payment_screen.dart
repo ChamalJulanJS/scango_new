@@ -32,26 +32,27 @@ class _PaymentScreenState extends State<PaymentScreen> {
   }
 
   Future<void> _processPayment() async {
+    // No need to show processing state for a very quick operation
     setState(() {
       _isPaymentProcessing = true;
+      _isPaymentComplete = true; // Set as complete immediately
     });
 
-    // Simulate payment processing
-    await Future.delayed(const Duration(seconds: 2));
+    // Minimal delay to show payment success
+    await Future.delayed(const Duration(milliseconds: 100));
 
-    setState(() {
-      _isPaymentProcessing = false;
-      _isPaymentComplete = true;
-    });
-
-    // Wait a bit and then go back to home
+    // Immediately navigate back to ticket screen
     if (mounted) {
-      await Future.delayed(const Duration(seconds: 2));
+      // ignore: use_build_context_synchronously
       Navigator.pushNamedAndRemoveUntil(
-        // ignore: use_build_context_synchronously
         context,
-        AppConstants.homeRoute,
+        AppConstants.mainRoute,
         (route) => false,
+        arguments: {
+          'initialTab': 2, // Navigate to ticket tab
+          'busNumber': _ticketDetails['busNumber'],
+          'pickupLocation': _ticketDetails['pickupLocation'],
+        },
       );
     }
   }

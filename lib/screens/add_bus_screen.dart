@@ -18,6 +18,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
   bool _isLoading = false;
   String? _errorMessage;
   bool _isCheckingDuplicate = false;
+  bool _hasCheckedForBuses = false;
 
   // List of available cities (routes)
   final List<String> _availableCities = [
@@ -36,6 +37,36 @@ class _AddBusScreenState extends State<AddBusScreen> {
     super.initState();
     // Add listener to bus number controller for auto uppercase
     _busNumberController.addListener(_onBusNumberChanged);
+    // Check if user has any buses
+    // _checkForUserBuses();
+  }
+
+  // Check if the user has any buses and show a message if not
+  Future<void> _checkForUserBuses() async {
+    if (_hasCheckedForBuses) return; // Only check once
+
+    try {
+      final List<String> userBuses = await _dataService.getAllBusNumbers();
+
+      if (mounted && userBuses.isEmpty && !_hasCheckedForBuses) {
+        _hasCheckedForBuses = true;
+
+        // Use a small delay to ensure the screen is fully loaded
+        Future.delayed(Duration(milliseconds: 500), () {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('No buses registered. Please add a bus first.'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+        });
+      }
+    } catch (e) {
+      // Silently fail, no need to show error for this check
+      print('Error checking for user buses: $e');
+    }
   }
 
   @override

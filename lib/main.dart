@@ -7,8 +7,8 @@ import 'screens/login_screen.dart';
 import 'screens/signup_screen.dart';
 import 'screens/create_pin_screen.dart';
 import 'screens/confirm_pin_screen.dart';
+import 'screens/verify_pin_screen.dart';
 import 'screens/checkout_screen.dart';
-import 'screens/payment_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/edit_profile_screen.dart';
 import 'screens/edit_pin_screen.dart';
@@ -58,6 +58,19 @@ class MyApp extends StatelessWidget {
         AppConstants.signupRoute: (context) => const SignupScreen(),
         AppConstants.createPinRoute: (context) => const CreatePinScreen(),
         AppConstants.confirmPinRoute: (context) => const ConfirmPinScreen(),
+        AppConstants.verifyPinRoute: (context) {
+          // Extract arguments from route settings
+          final args = ModalRoute.of(context)?.settings.arguments
+              as Map<String, dynamic>?;
+          final targetRoute =
+              args?['targetRoute'] as String? ?? AppConstants.mainRoute;
+          final routeArgs = args?['arguments'] as Map<String, dynamic>?;
+
+          return VerifyPinScreen(
+            targetRoute: targetRoute,
+            arguments: routeArgs,
+          );
+        },
         AppConstants.mainRoute: (context) => const MainScreen(),
         // The following routes are kept for backward compatibility
         // but we'll gradually transition to using mainRoute with initialTab arguments
@@ -69,7 +82,6 @@ class MyApp extends StatelessWidget {
         AppConstants.editProfileRoute: (context) => const EditProfileScreen(),
         AppConstants.editPinRoute: (context) => const EditPinScreen(),
         AppConstants.checkoutRoute: (context) => const CheckoutScreen(),
-        AppConstants.paymentRoute: (context) => const PaymentScreen(),
       },
     );
   }

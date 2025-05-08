@@ -13,7 +13,14 @@ import 'dart:convert';
 import '../utils/config.dart';
 
 class TicketScreen extends StatefulWidget {
-  const TicketScreen({super.key});
+  final String? initialBusNumber;
+  final String? initialPickupLocation;
+
+  const TicketScreen({
+    super.key,
+    this.initialBusNumber,
+    this.initialPickupLocation,
+  });
 
   @override
   State<TicketScreen> createState() => _TicketScreenState();
@@ -46,9 +53,45 @@ class _TicketScreenState extends State<TicketScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Initialize values from widget parameters
+    _selectedBusNumber = widget.initialBusNumber;
+    _selectedPickupLocation = widget.initialPickupLocation;
+
+    // Debug print to verify values
+    print(
+        'DEBUG: TicketScreen initialized with busNumber: $_selectedBusNumber, pickupLocation: $_selectedPickupLocation');
+
+    // Fetch bus numbers from Firebase
     _fetchBusNumbers();
+
+    // Initialize speech and Gemini
     _initSpeech();
     _initGemini();
+
+    // If initial bus number is provided but pickup locations aren't loaded yet, fetch them
+    if (_selectedBusNumber != null && _pickupLocations.isEmpty) {
+      _fetchPickupLocations(_selectedBusNumber!);
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    // If we have initialPickupLocation but pickup locations are already loaded,
+    // check if we can select the initialPickupLocation
+    if (widget.initialPickupLocation != null &&
+        _pickupLocations.isNotEmpty &&
+        _pickupLocations.contains(widget.initialPickupLocation) &&
+        _selectedPickupLocation != widget.initialPickupLocation) {
+      setState(() {
+        _selectedPickupLocation = widget.initialPickupLocation;
+      });
+
+      print(
+          'DEBUG: didChangeDependencies updated pickup location to: $_selectedPickupLocation');
+    }
   }
 
   @override
@@ -357,17 +400,46 @@ Examples:
         _isListening = false;
         _isProcessing = false;
       });
+
+      // Check if both destination and seat count are filled via voice input
+      // If so, automatically proceed to checkout
+      if (_destinationController.text.isNotEmpty &&
+          _seatCountController.text.isNotEmpty &&
+          jsonResponse.containsKey('city') &&
+          jsonResponse.containsKey('seats') &&
+          _canProceedToCheckout()) {
+        // Allow UI to update first
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            _submitTicket();
+          }
+        });
+      }
     }
   }
 
-  // Fetch bus numbers from Firebase Buses collection
+  // Fetch bus numbers from Firebase Buses collection (only for current user)
   Future<void> _fetchBusNumbers() async {
     setState(() {
       _isLoading = true;
     });
 
     try {
-      final busesSnapshot = await _firestore.collection('Buses').get();
+      // Get current user ID
+      final userId = _authService.currentUser?.uid;
+      if (userId == null) {
+        _showErrorSnackBar('User not authenticated');
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Query buses where userId matches current user
+      final busesSnapshot = await _firestore
+          .collection('Buses')
+          .where('userId', isEqualTo: userId)
+          .get();
 
       final buses = busesSnapshot.docs.map((doc) {
         return doc.data()['busNumber'] as String;
@@ -376,9 +448,12 @@ Examples:
       setState(() {
         _busNumbers = buses;
         _isLoading = false;
+        // No snackbar message here - even if no buses are found
       });
     } catch (e) {
-      _showErrorSnackBar('Failed to load bus numbers: ${e.toString()}');
+      if (mounted) {
+        _showErrorSnackBar('Failed to load bus numbers: ${e.toString()}');
+      }
       setState(() {
         _isLoading = false;
       });
@@ -389,8 +464,13 @@ Examples:
   Future<void> _fetchPickupLocations(String busNumber) async {
     setState(() {
       _isLoading = true;
+      // Don't reset the pickup locations and selected pickup location here
+      // to preserve the initial values when returning from checkout
       _pickupLocations = [];
-      _selectedPickupLocation = null;
+      // Only reset selected pickup location if it doesn't match the initialPickupLocation
+      if (widget.initialPickupLocation != _selectedPickupLocation) {
+        _selectedPickupLocation = null;
+      }
     });
 
     try {
@@ -406,6 +486,16 @@ Examples:
         setState(() {
           _pickupLocations = routes;
           _isLoading = false;
+
+          // If we have an initialPickupLocation from the widget, try to select it
+          if (widget.initialPickupLocation != null &&
+              _pickupLocations.contains(widget.initialPickupLocation)) {
+            _selectedPickupLocation = widget.initialPickupLocation;
+          }
+
+          // Debug print to verify pickup locations and selected value
+          print('DEBUG: Pickup locations loaded: $_pickupLocations');
+          print('DEBUG: Selected pickup location: $_selectedPickupLocation');
         });
       } else {
         _showErrorSnackBar('Bus routes not found');
@@ -492,14 +582,17 @@ Examples:
       // Show success message
       _showSuccessSnackBar('Ticket created successfully!');
 
-      // Use addPostFrameCallback to navigate after the current frame completes
-      // This prevents ScrollController not attached errors
+      // Process for checkout (simulating payment processing without user interaction)
+      await Future.delayed(const Duration(seconds: 1));
+
+      // Go to checkout screen first - this will show the ticket details
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
+          // Navigate to checkout screen
           Navigator.pushNamed(
             context,
             AppConstants.checkoutRoute,
@@ -509,6 +602,7 @@ Examples:
               'destination': _destinationController.text.trim(),
               'seatCount': _seatCountController.text,
               'totalPrice': totalPrice,
+              'autoProcess': true, // Add flag to auto-process checkout
             },
           );
         });
@@ -789,24 +883,8 @@ Examples:
                             ),
                           const SizedBox(height: 30),
 
-                          // Checkout Button
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: CustomButton(
-                                  text:
-                                      _isLoading ? 'Processing...' : 'Checkout',
-                                  onPressed: _isLoading
-                                      ? () {}
-                                      : () => _submitTicket(),
-                                  backgroundColor: _canProceedToCheckout()
-                                      ? AppTheme.accentColor
-                                      : AppTheme.greyColor,
-                                ),
-                              ),
-                            ],
-                          ),
+                          // Checkout Button removed - automatic checkout will happen after voice input
+
                           const SizedBox(height: 20),
                         ],
                       ),
@@ -879,26 +957,43 @@ Examples:
         border: Border.all(color: AppTheme.accentColor),
         borderRadius: BorderRadius.circular(10.0),
       ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          hint: Text(
-            hint,
-            style: Theme.of(context).textTheme.bodyMedium,
+      child: GestureDetector(
+        // Add gesture detector to intercept taps that might interfere with navigation
+        onTap: () {
+          // Close any open snackbars that could interfere with dropdowns
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+          // Force focus to stay within this screen
+          FocusScope.of(context).unfocus();
+          FocusScope.of(context).requestFocus(FocusNode());
+        },
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: value,
+            hint: Text(
+              hint,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            items: items.map((item) {
+              return DropdownMenuItem<String>(
+                value: item,
+                child: Text(
+                  item,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              );
+            }).toList(),
+            onChanged: onChanged,
+            icon:
+                const Icon(Icons.arrow_drop_down, color: AppTheme.accentColor),
+            isExpanded: true,
+            dropdownColor: AppTheme.primaryColor,
+            menuMaxHeight: MediaQuery.of(context).size.height * 0.4,
+            focusColor: Colors.transparent,
+            // Add other properties to prevent focus issues
+            elevation: 8,
+            underline: Container(height: 0),
           ),
-          items: items.map((item) {
-            return DropdownMenuItem<String>(
-              value: item,
-              child: Text(
-                item,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            );
-          }).toList(),
-          onChanged: onChanged,
-          icon: const Icon(Icons.arrow_drop_down, color: AppTheme.accentColor),
-          isExpanded: true,
-          dropdownColor: AppTheme.primaryColor,
         ),
       ),
     );
