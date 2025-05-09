@@ -148,7 +148,6 @@ class _VerifyPinScreenState extends State<VerifyPinScreen> {
         body: SafeArea(
           child: Column(
             children: [
-              // Top section with logo and title
               const Center(child: AppLogo()),
               const SizedBox(height: 40),
               Text(
