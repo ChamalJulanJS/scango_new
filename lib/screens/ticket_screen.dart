@@ -569,6 +569,16 @@ Examples:
         });
         return;
       }
+      
+      // Check if destination is in the bus routes
+      final isValidDestination = await _validateDestination();
+      if (!isValidDestination) {
+        _showErrorSnackBar('Destination not on this bus route');
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
       await _firestore.collection('Ticket').add({
         'userId': userId,
         'busNumber': _selectedBusNumber,
@@ -1042,5 +1052,41 @@ Examples:
         duration: const Duration(seconds: 1),
       ),
     );
+  }
+
+  Future<bool> _validateDestination() async {
+    try {
+      // Get the routes for the selected bus
+      final busDoc = await _firestore
+          .collection('Buses')
+          .where('busNumber', isEqualTo: _selectedBusNumber)
+          .get();
+      
+      if (busDoc.docs.isEmpty) return false;
+      
+      final routes = List<String>.from(busDoc.docs.first.data()['route'] ?? []);
+      final destination = _destinationController.text.trim();
+      
+      // First check if the destination exactly matches any route
+      if (routes.contains(destination)) return true;
+      
+      // If not an exact match, use Gemini to check if the destination is included
+      final prompt = """I have a bus with the following routes: ${routes.join(', ')}. 
+      Is '$destination' included in or near these routes? Answer only with 'yes' or 'no'."""; 
+      
+      final response = await _gemini.chat([
+        Content(parts: [Part.text(prompt)], role: 'user')
+      ]);
+      
+      if (response != null && response.output != null) {
+        final answer = response.output!.toLowerCase();
+        return answer.contains('yes');
+      }
+      
+      return false;
+    } catch (e) {
+      debugPrint('Error validating destination: $e');
+      return true; // Allow the ticket if validation fails
+    }
   }
 }
