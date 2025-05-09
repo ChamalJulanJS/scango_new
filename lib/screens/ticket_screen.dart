@@ -648,114 +648,7 @@ Examples:
                           const SizedBox(height: 20),
                           const Center(child: AppLogo()),
                           const SizedBox(height: 30),
-
-                          // Voice recognition button
-                          Center(
-                            child: Column(
-                              children: [
-                                InkWell(
-                                  onTap: _isProcessing
-                                      ? null // Disable while processing
-                                      : (_isListening
-                                          ? _stopListening
-                                          : _startListening),
-                                  borderRadius: BorderRadius.circular(50),
-                                  child: Container(
-                                    padding: const EdgeInsets.all(15),
-                                    decoration: BoxDecoration(
-                                      color: _isProcessing
-                                          ? AppTheme.greyColor
-                                          : _isListening
-                                              ? AppTheme.accentColor
-                                              : AppTheme.greyColor,
-                                      shape: BoxShape.circle,
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black
-                                              .withValues(alpha: 0.1),
-                                          blurRadius: 10,
-                                          spreadRadius: 2,
-                                        ),
-                                      ],
-                                    ),
-                                    child: Icon(
-                                      _isProcessing
-                                          ? Icons.hourglass_top
-                                          : _isListening
-                                              ? Icons.mic
-                                              : Icons.mic_none,
-                                      color: _isProcessing
-                                          ? AppTheme.accentColor
-                                          : _isListening
-                                              ? Colors.white
-                                              : AppTheme.accentColor,
-                                      size: 40,
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  _isProcessing
-                                      ? "Processing speech with AI..."
-                                      : _isListening
-                                          ? "Listening in Sinhala..."
-                                          : "Tap to speak destination & seats",
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .bodyMedium
-                                      ?.copyWith(
-                                        color: AppTheme.accentColor,
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                ),
-                                if (_lastWords.isNotEmpty)
-                                  Padding(
-                                    padding: const EdgeInsets.only(
-                                        top: 12.0, bottom: 12.0),
-                                    child: Container(
-                                      padding: const EdgeInsets.all(12),
-                                      width: double.infinity,
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.lightGreyColor,
-                                        borderRadius: BorderRadius.circular(12),
-                                        border: Border.all(
-                                            color: AppTheme.accentColor
-                                                .withValues(alpha: 0.3)),
-                                      ),
-                                      child: Column(
-                                        children: [
-                                          Text(
-                                            'Transcribed Sinhala:',
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodySmall
-                                                ?.copyWith(
-                                                  color: AppTheme.accentColor
-                                                      .withValues(alpha: 0.7),
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                          ),
-                                          const SizedBox(height: 4),
-                                          Text(
-                                            _lastWords,
-                                            style: Theme.of(context)
-                                                .textTheme
-                                                .bodyMedium
-                                                ?.copyWith(
-                                                  color: AppTheme.accentColor,
-                                                  fontStyle: _isListening
-                                                      ? FontStyle.italic
-                                                      : FontStyle.normal,
-                                                ),
-                                            textAlign: TextAlign.center,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
+                          if (_autoProcess) _voiceRecognitionButton(),
                           const SizedBox(height: 20),
 
                           // Bus Number Dropdown
@@ -912,6 +805,100 @@ Examples:
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Center _voiceRecognitionButton() {
+    return Center(
+      child: Column(
+        children: [
+          InkWell(
+            onTap: _isProcessing
+                ? null
+                : (_isListening ? _stopListening : _startListening),
+            borderRadius: BorderRadius.circular(50),
+            child: Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                color: _isProcessing
+                    ? AppTheme.greyColor
+                    : _isListening
+                        ? AppTheme.accentColor
+                        : AppTheme.greyColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _isProcessing
+                    ? Icons.hourglass_top
+                    : _isListening
+                        ? Icons.mic
+                        : Icons.mic_none,
+                color: _isProcessing
+                    ? AppTheme.accentColor
+                    : _isListening
+                        ? Colors.white
+                        : AppTheme.accentColor,
+                size: 40,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isProcessing
+                ? "Processing speech with AI..."
+                : _isListening
+                    ? "Listening in Sinhala..."
+                    : "Tap to speak destination & seats",
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.accentColor,
+                  fontWeight: FontWeight.w500,
+                ),
+          ),
+          if (_lastWords.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12.0, bottom: 12.0),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppTheme.lightGreyColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppTheme.accentColor.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Transcribed Sinhala:',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppTheme.accentColor.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _lastWords,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppTheme.accentColor,
+                            fontStyle: _isListening
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
