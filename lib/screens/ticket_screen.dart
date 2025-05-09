@@ -27,6 +27,7 @@ class TicketScreen extends StatefulWidget {
 }
 
 class _TicketScreenState extends State<TicketScreen> {
+  final bool _autoProcess = false;
   final AuthService _authService = AuthService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   // Speech to text
@@ -72,6 +73,22 @@ class _TicketScreenState extends State<TicketScreen> {
     // If initial bus number is provided but pickup locations aren't loaded yet, fetch them
     if (_selectedBusNumber != null && _pickupLocations.isEmpty) {
       _fetchPickupLocations(_selectedBusNumber!);
+    }
+
+    // If we came from the Busses screen with a started bus, show a message
+    if (_selectedBusNumber != null) {
+      Future.delayed(Duration(milliseconds: 500), () {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                  'Bus $_selectedBusNumber started. Ready to issue tickets.'),
+              backgroundColor: AppTheme.greenColor,
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+      });
     }
   }
 
@@ -511,15 +528,12 @@ Examples:
     }
   }
 
-  // Calculate total price based on seat count
   double _calculateTotalPrice() {
     final seatCount = int.tryParse(_seatCountController.text) ?? 0;
     return seatCount * 100.0;
   }
 
-  // Submit ticket data to Firebase
   Future<void> _submitTicket() async {
-    // Validate inputs
     if (_selectedBusNumber == null) {
       _showErrorSnackBar('Please select a bus number');
       return;
@@ -548,16 +562,12 @@ Examples:
 
     final totalPrice = _calculateTotalPrice();
 
-    // Show processing state
     setState(() {
       _isLoading = true;
     });
-
-    // Show a processing message to the user
     _showInfoSnackBar('Processing your ticket...');
 
     try {
-      // Get current user ID
       final userId = _authService.currentUser?.uid;
       if (userId == null) {
         _showErrorSnackBar('User not authenticated');
@@ -566,8 +576,6 @@ Examples:
         });
         return;
       }
-
-      // Create new ticket document
       await _firestore.collection('Ticket').add({
         'userId': userId,
         'busNumber': _selectedBusNumber,
@@ -602,7 +610,7 @@ Examples:
               'destination': _destinationController.text.trim(),
               'seatCount': _seatCountController.text,
               'totalPrice': totalPrice,
-              'autoProcess': true, // Add flag to auto-process checkout
+              'autoProcess': true,
             },
           );
         });
@@ -762,22 +770,7 @@ Examples:
                             style: Theme.of(context).textTheme.titleLarge,
                           ),
                           const SizedBox(height: 10),
-                          _buildDropdown(
-                            value: _selectedBusNumber,
-                            items: _busNumbers,
-                            hint: 'Select bus number',
-                            onChanged: _isLoading
-                                ? null
-                                : (value) {
-                                    setState(() {
-                                      _selectedBusNumber = value;
-                                      _selectedPickupLocation = null;
-                                    });
-                                    if (value != null) {
-                                      _fetchPickupLocations(value);
-                                    }
-                                  },
-                          ),
+                          _buildBusNumberDropdown(),
                           const SizedBox(height: 20),
 
                           // Pickup Location Dropdown
@@ -862,28 +855,13 @@ Examples:
 
                           // Total Price Display
                           if (_seatCountController.text.isNotEmpty)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(15.0),
-                              decoration: BoxDecoration(
-                                color: AppTheme.accentColor,
-                                borderRadius: BorderRadius.circular(10.0),
-                              ),
-                              child: Text(
-                                'Total Price: Rs. ${_calculateTotalPrice().toStringAsFixed(0)}',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .titleLarge
-                                    ?.copyWith(
-                                      color: AppTheme.primaryColor,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                textAlign: TextAlign.center,
-                              ),
+                            CustomButton(
+                              width: MediaQuery.sizeOf(context).width,
+                              text:
+                                  'Pay Total ${_calculateTotalPrice().toStringAsFixed(0)}',
+                              onPressed: () =>
+                                  !_autoProcess ? _submitTicket() : null,
                             ),
-                          const SizedBox(height: 30),
-
-                          // Checkout Button removed - automatic checkout will happen after voice input
 
                           const SizedBox(height: 20),
                         ],
@@ -894,7 +872,7 @@ Examples:
                   // Loading overlay
                   if (_isLoading)
                     Container(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       child: Center(
                         child: Container(
                           padding: const EdgeInsets.all(24),
@@ -903,7 +881,7 @@ Examples:
                             borderRadius: BorderRadius.circular(16),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
+                                color: Colors.black.withValues(alpha: 0.1),
                                 blurRadius: 12,
                                 spreadRadius: 2,
                               ),
@@ -944,29 +922,65 @@ Examples:
     );
   }
 
+  Widget _buildBusNumberDropdown() {
+    bool isFromBussesScreen = widget.initialBusNumber != null;
+
+    if (_selectedBusNumber != null &&
+        !_busNumbers.contains(_selectedBusNumber)) {
+      if (isFromBussesScreen && _selectedBusNumber != null) {
+        _busNumbers.add(_selectedBusNumber!);
+      }
+    }
+
+    return DropdownButtonFormField<String>(
+      value: _selectedBusNumber,
+      decoration: InputDecoration(
+        labelText: 'Bus Number',
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        prefixIcon: const Icon(Icons.directions_bus),
+        filled: isFromBussesScreen,
+        fillColor: isFromBussesScreen ? Colors.grey.shade200 : null,
+      ),
+      items: _busNumbers.map((String busNumber) {
+        return DropdownMenuItem<String>(
+          value: busNumber,
+          child: Text(busNumber),
+        );
+      }).toList(),
+      onChanged: isFromBussesScreen
+          ? null
+          : (String? newValue) {
+              setState(() {
+                _selectedBusNumber = newValue;
+                _selectedPickupLocation = null;
+                _pickupLocations = [];
+              });
+              if (newValue != null) {
+                _fetchPickupLocations(newValue);
+              }
+            },
+    );
+  }
+
   Widget _buildDropdown({
     required String? value,
     required List<String> items,
     required String hint,
     required void Function(String?)? onChanged,
   }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12.0),
-      decoration: BoxDecoration(
-        border: Border.all(color: AppTheme.accentColor),
-        borderRadius: BorderRadius.circular(10.0),
-      ),
-      child: GestureDetector(
-        // Add gesture detector to intercept taps that might interfere with navigation
-        onTap: () {
-          // Close any open snackbars that could interfere with dropdowns
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-          // Force focus to stay within this screen
-          FocusScope.of(context).unfocus();
-          FocusScope.of(context).requestFocus(FocusNode());
-        },
+    return GestureDetector(
+      onTap: () {
+        AppConfig.fromDropDown = true;
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppTheme.accentColor),
+          borderRadius: BorderRadius.circular(10.0),
+        ),
         child: DropdownButtonHideUnderline(
           child: DropdownButton<String>(
             value: value,
@@ -990,7 +1004,6 @@ Examples:
             dropdownColor: AppTheme.primaryColor,
             menuMaxHeight: MediaQuery.of(context).size.height * 0.4,
             focusColor: Colors.transparent,
-            // Add other properties to prevent focus issues
             elevation: 8,
             underline: Container(height: 0),
           ),
@@ -1007,21 +1020,17 @@ Examples:
         (int.tryParse(_seatCountController.text) ?? 0) > 0;
   }
 
-  // Initialize Gemini
   void _initGemini() {
     try {
-      // This ensures Gemini is initialized properly
       if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
         log('WARNING: Using default Gemini API key. Replace with your actual key in config.dart');
       }
 
-      // Test if Gemini is already initialized
-      final gemini = Gemini.instance;
+      Gemini.instance;
       log('Gemini initialized successfully in TicketScreen');
     } catch (e) {
       log('Error initializing Gemini: $e');
 
-      // Try to initialize with the API key
       try {
         Gemini.init(apiKey: AppConfig.geminiApiKey);
         log('Gemini initialized in TicketScreen');
@@ -1031,9 +1040,7 @@ Examples:
     }
   }
 
-  // Shows success message as SnackBar
   void _showSuccessSnackBar(String message) {
-    // Clear any existing SnackBars
     ScaffoldMessenger.of(context).clearSnackBars();
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1045,9 +1052,7 @@ Examples:
     );
   }
 
-  // Shows info message as SnackBar (neutral information)
   void _showInfoSnackBar(String message) {
-    // Clear any existing SnackBars
     ScaffoldMessenger.of(context).clearSnackBars();
 
     ScaffoldMessenger.of(context).showSnackBar(

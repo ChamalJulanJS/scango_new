@@ -10,6 +10,7 @@ import 'screens/confirm_pin_screen.dart';
 import 'screens/verify_pin_screen.dart';
 import 'screens/checkout_screen.dart';
 import 'screens/main_screen.dart';
+import 'screens/add_bus_screen.dart';
 import 'screens/edit_profile_screen.dart';
 import 'screens/edit_pin_screen.dart';
 import 'theme/app_theme.dart';
@@ -72,11 +73,16 @@ class MyApp extends StatelessWidget {
           );
         },
         AppConstants.mainRoute: (context) => const MainScreen(),
-        // The following routes are kept for backward compatibility
-        // but we'll gradually transition to using mainRoute with initialTab arguments
         AppConstants.homeRoute: (context) => const MainScreen(initialTab: 0),
-        AppConstants.addBusRoute: (context) => const MainScreen(initialTab: 1),
-        AppConstants.ticketRoute: (context) => const MainScreen(initialTab: 2),
+        AppConstants.addBusRoute: (context) => const AddBusScreen(),
+        AppConstants.bussesRoute: (context) => const MainScreen(initialTab: 1),
+        AppConstants.ticketRoute: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments
+              as Map<String, dynamic>?;
+          final busNumber = args?['busNumber'] as String?;
+          final pickupLocation = args?['pickupLocation'] as String?;
+          return MainScreen(initialTab: 2, busNumber: busNumber, pickupLocation: pickupLocation);
+        },
         AppConstants.historyRoute: (context) => const MainScreen(initialTab: 3),
         AppConstants.profileRoute: (context) => const MainScreen(initialTab: 4),
         AppConstants.editProfileRoute: (context) => const EditProfileScreen(),

@@ -41,10 +41,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to load bus numbers: ${e.toString()}';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load bus numbers: ${e.toString()}';
+          _isLoading = false;
+        });
+      }
     }
   }
 

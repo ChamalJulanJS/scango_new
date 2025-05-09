@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:scan_go/utils/constants.dart';
 import '../widgets/common_widgets.dart';
 import '../theme/app_theme.dart';
 import '../services/data_service.dart';
@@ -327,6 +328,17 @@ class _AddBusScreenState extends State<AddBusScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: AppTheme.accentColor),
+          onPressed: () => Navigator.pushNamedAndRemoveUntil(
+              context, AppConstants.bussesRoute, (route) => false),
+        ),
+        title: const Text('Add Bus',
+            style: TextStyle(color: AppTheme.accentColor)),
+      ),
       body: SafeArea(
         child: Column(
           children: [
@@ -337,9 +349,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 20),
-                      const Center(child: AppLogo()),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 10),
                       Text(
                         'Bus Number',
                         style: Theme.of(context).textTheme.titleLarge,

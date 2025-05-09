@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
-import '../widgets/common_widgets.dart';
-import '../theme/app_theme.dart';
 import '../services/auth_service.dart';
+import '../theme/app_theme.dart';
+import '../widgets/common_widgets.dart';
 
 class VerifyPinScreen extends StatefulWidget {
   final String targetRoute;
@@ -59,23 +59,28 @@ class _VerifyPinScreenState extends State<VerifyPinScreen> {
         return;
       }
 
-      // PIN is correct, navigate to target route
       if (mounted) {
-        print(
-            "PIN verified successfully. Navigating to: ${widget.targetRoute}");
-        print("Arguments: ${widget.arguments}");
-
-        // Add a small delay to ensure the navigation works properly
         await Future.delayed(Duration(milliseconds: 100));
-
-        // Instead of just replacing the PIN screen, clear the entire navigation
-        // stack to prevent issues with the back button and dropdowns
+        
+        // Handle normal PIN verification flow
         if (widget.targetRoute == AppConstants.mainRoute) {
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            widget.targetRoute,
-            (route) => false, // Remove all previous routes
-            arguments: widget.arguments,
-          );
+          String target = widget.targetRoute;
+          if (widget.arguments?['initialTab'] == 1) {
+            target = AppConstants.bussesRoute;
+          } else if (widget.arguments?['initialTab'] == 2) {
+            target = AppConstants.ticketRoute;
+          } else if (widget.arguments?['initialTab'] == 3) {
+            target = AppConstants.historyRoute;
+          } else if (widget.arguments?['initialTab'] == 4) {
+            target = AppConstants.profileRoute;
+          }
+          if (mounted) {
+            Navigator.of(context).pushNamedAndRemoveUntil(
+              target,
+              (route) => false,
+              arguments: widget.arguments,
+            );
+          }
         } else {
           // For other routes that aren't the main screen, just replace
           Navigator.of(context).pushReplacementNamed(
@@ -85,7 +90,6 @@ class _VerifyPinScreenState extends State<VerifyPinScreen> {
         }
       }
     } catch (e) {
-      print("Error during PIN verification: $e");
       setState(() {
         _errorMessage = 'Failed to verify PIN: ${e.toString()}';
         _isLoading = false;

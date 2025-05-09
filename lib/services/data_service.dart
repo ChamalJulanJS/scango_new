@@ -48,6 +48,8 @@ class DataService {
       'driver': user.username ?? 'Unknown',
       'userId': user.uid,
       'timestamp': Timestamp.now(),
+      'isStarted': false,
+      'lastStatusChange': null,
     });
 
     if (result.id.isNotEmpty) {
@@ -222,6 +224,46 @@ class DataService {
     } catch (e) {
       // Handle any errors
       print('Error getting bus numbers: $e');
+      return [];
+    }
+  }
+  
+  // Update bus status (start/stop)
+  Future<void> updateBusStatus(String busId, bool isStarted) async {
+    try {
+      await busesCollection.doc(busId).update({
+        'isStarted': isStarted,
+        'lastStatusChange': Timestamp.now(),
+      });
+    } catch (e) {
+      print('Error updating bus status: $e');
+      throw Exception('Failed to update bus status: $e');
+    }
+  }
+  
+  // Get a specific bus by ID
+  Future<DocumentSnapshot?> getBusById(String busId) async {
+    try {
+      return await busesCollection.doc(busId).get();
+    } catch (e) {
+      print('Error getting bus by ID: $e');
+      return null;
+    }
+  }
+  
+  // Get all buses for the current user
+  Future<List<DocumentSnapshot>> getUserBuses() async {
+    final String? userId = _authService.currentUser?.uid;
+    if (userId == null) {
+      throw Exception('User not authenticated');
+    }
+
+    try {
+      final busesSnapshot =
+          await busesCollection.where('userId', isEqualTo: userId).get();
+      return busesSnapshot.docs;
+    } catch (e) {
+      print('Error getting user buses: $e');
       return [];
     }
   }

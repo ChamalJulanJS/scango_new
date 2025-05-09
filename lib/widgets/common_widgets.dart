@@ -40,6 +40,7 @@ class CustomButton extends StatelessWidget {
   final Color backgroundColor;
   final Color textColor;
   final double borderRadius;
+  final double? width;
 
   const CustomButton({
     super.key,
@@ -48,6 +49,7 @@ class CustomButton extends StatelessWidget {
     this.backgroundColor = AppTheme.buttonColor,
     this.textColor = AppTheme.primaryColor,
     this.borderRadius = 15.0,
+    this.width,
   });
 
   @override
@@ -61,6 +63,7 @@ class CustomButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(borderRadius),
         ),
         padding: const EdgeInsets.symmetric(vertical: 15.0),
+        fixedSize: width != null ? Size.fromWidth(width!) : null,
       ),
       child: Text(
         text,

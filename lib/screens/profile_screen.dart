@@ -38,10 +38,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        _errorMessage = 'Failed to load profile: ${e.toString()}';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _errorMessage = 'Failed to load profile: ${e.toString()}';
+          _isLoading = false;
+        });
+      }
     }
   }
 

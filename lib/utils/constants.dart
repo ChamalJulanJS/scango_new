@@ -9,6 +9,7 @@ class AppConstants {
   static const String mainRoute = '/main';
   static const String homeRoute = '/home';
   static const String addBusRoute = '/add_bus';
+  static const String bussesRoute = '/busses';
   static const String ticketRoute = '/ticket';
   static const String historyRoute = '/history';
   static const String profileRoute = '/profile';
