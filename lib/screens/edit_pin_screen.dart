@@ -113,9 +113,9 @@ class _EditPinScreenState extends State<EditPinScreen> {
                         width: double.infinity,
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: AppTheme.accentColor.withOpacity(0.1),
+                          color: AppTheme.accentColor.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppTheme.accentColor.withOpacity(0.3)),
+                          border: Border.all(color: AppTheme.accentColor.withValues(alpha: 0.3)),
                         ),
                         child: Column(
                           children: [
@@ -244,7 +244,7 @@ class _EditPinScreenState extends State<EditPinScreen> {
                           width: double.infinity,
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
-                            color: AppTheme.redColor.withOpacity(0.1),
+                            color: AppTheme.redColor.withValues(alpha: 0.1),
                             borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: AppTheme.redColor),
                           ),

@@ -326,7 +326,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                 width: double.infinity,
                                 padding: const EdgeInsets.all(12),
                                 decoration: BoxDecoration(
-                                  color: AppTheme.redColor.withOpacity(0.1),
+                                  color: AppTheme.redColor.withValues(alpha: 0.1),
                                   borderRadius: BorderRadius.circular(10),
                                   border: Border.all(color: AppTheme.redColor),
                                 ),

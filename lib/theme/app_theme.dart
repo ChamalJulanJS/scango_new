@@ -95,11 +95,11 @@ class AppTheme {
         ),
         labelStyle: GoogleFonts.poppins(
           fontSize: 16.0,
-          color: accentColor.withOpacity(0.7),
+          color: accentColor.withValues(alpha: 0.7),
         ),
         hintStyle: GoogleFonts.poppins(
           fontSize: 16.0,
-          color: accentColor.withOpacity(0.5),
+          color: accentColor.withValues(alpha: 0.5),
         ),
       ),
       appBarTheme: AppBarTheme(

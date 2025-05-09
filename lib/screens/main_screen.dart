@@ -74,7 +74,7 @@ class _MainScreenState extends State<MainScreen> {
         'arguments': targetArgs,
       };
 
-      print(
+      debugPrint(
           'DEBUG: Initial tab requires PIN. Showing verification for tab: $_currentIndex');
 
       Future.delayed(Duration(milliseconds: 300), () {
@@ -104,55 +104,7 @@ class _MainScreenState extends State<MainScreen> {
  //     _handleNavigationArguments(args);
 
       // Debug: Print which tab we're currently on after navigation
-      print('DEBUG: Current tab index after navigation: $_currentIndex');
-    }
-  }
-
-  // Handle navigation arguments
-  void _handleNavigationArguments(Map<String, dynamic> args) {
-    bool needUpdate = false;
-
-    if (args.containsKey('initialTab')) {
-      final newTab = args['initialTab'] as int;
-      print(
-          'DEBUG: Attempting to navigate to tab: $newTab (current: $_currentIndex)');
-
-      // Always update the current index if it's provided in the arguments
-      if (_currentIndex != newTab) {
-        _currentIndex = newTab;
-        needUpdate = true;
-      }
-    }
-
-    // Handle the bus number and pickup location
-    if (args.containsKey('busNumber')) {
-      _busNumber = args['busNumber'] as String;
-      needUpdate = true;
-    }
-
-    if (args.containsKey('pickupLocation')) {
-      _pickupLocation = args['pickupLocation'] as String;
-      needUpdate = true;
-    }
-
-    // Debug print to verify values
-    print(
-        'DEBUG: Navigation with busNumber: $_busNumber, pickupLocation: $_pickupLocation');
-
-    if (needUpdate) {
-      // Force rebuild
-      setState(() {
-        _isTabSwitching = true;
-
-        // Reset the flag after a short delay to allow the widget to rebuild
-        Future.delayed(Duration(milliseconds: 300), () {
-          if (mounted) {
-            setState(() {
-              _isTabSwitching = false;
-            });
-          }
-        });
-      });
+      debugPrint('DEBUG: Current tab index after navigation: $_currentIndex');
     }
   }
 
@@ -162,7 +114,7 @@ class _MainScreenState extends State<MainScreen> {
     });
     
 
-    print(
+    debugPrint(
         'DEBUG: Attempting to navigate from tab $_currentIndex to tab $index');
 
     // Check if tab requires PIN verification
@@ -186,7 +138,7 @@ class _MainScreenState extends State<MainScreen> {
         'arguments': targetArgs,
       };
 
-      print('DEBUG: Tab requires PIN. Showing verification for tab: $index');
+      debugPrint('DEBUG: Tab requires PIN. Showing verification for tab: $index');
 
       // Reset tab switching flag after a short delay, even if we're navigating away
       Future.delayed(Duration(milliseconds: 300), () {
@@ -205,7 +157,7 @@ class _MainScreenState extends State<MainScreen> {
       );
     } else {
       // Navigate directly to the tab
-      print('DEBUG: No PIN required. Directly navigating to tab: $index');
+      debugPrint('DEBUG: No PIN required. Directly navigating to tab: $index');
       setState(() {
         _currentIndex = index;
 
@@ -223,7 +175,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
-    print('DEBUG: Building MainScreen with currentIndex: $_currentIndex');
+    debugPrint('DEBUG: Building MainScreen with currentIndex: $_currentIndex');
 
     // Rebuild the pages each time build is called to ensure latest parameters are used
     final pages = [
@@ -247,7 +199,7 @@ class _MainScreenState extends State<MainScreen> {
           // Add modal barrier during tab switching to prevent dropdown interactions
           if (_isTabSwitching)
             ModalBarrier(
-              color: Colors.black.withOpacity(0.01),
+              color: Colors.black.withValues(alpha: 0.01),
               dismissible: false,
             ),
         ],

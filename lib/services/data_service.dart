@@ -2,6 +2,7 @@ import 'dart:developer';
 import 'dart:typed_data';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
+import 'package:flutter/material.dart';
 import 'package:scan_go/services/firebase_service.dart';
 import 'package:scan_go/services/auth_service.dart';
 
@@ -223,7 +224,7 @@ class DataService {
       return busNumbers;
     } catch (e) {
       // Handle any errors
-      print('Error getting bus numbers: $e');
+      debugPrint('Error getting bus numbers: $e');
       return [];
     }
   }
@@ -236,7 +237,7 @@ class DataService {
         'lastStatusChange': Timestamp.now(),
       });
     } catch (e) {
-      print('Error updating bus status: $e');
+      debugPrint('Error updating bus status: $e');
       throw Exception('Failed to update bus status: $e');
     }
   }
@@ -246,12 +247,11 @@ class DataService {
     try {
       return await busesCollection.doc(busId).get();
     } catch (e) {
-      print('Error getting bus by ID: $e');
+      debugPrint('Error getting bus by ID: $e');
       return null;
     }
   }
   
-  // Get all buses for the current user
   Future<List<DocumentSnapshot>> getUserBuses() async {
     final String? userId = _authService.currentUser?.uid;
     if (userId == null) {
@@ -263,7 +263,7 @@ class DataService {
           await busesCollection.where('userId', isEqualTo: userId).get();
       return busesSnapshot.docs;
     } catch (e) {
-      print('Error getting user buses: $e');
+      debugPrint('Error getting user buses: $e');
       return [];
     }
   }

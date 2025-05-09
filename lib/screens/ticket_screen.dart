@@ -60,7 +60,7 @@ class _TicketScreenState extends State<TicketScreen> {
     _selectedPickupLocation = widget.initialPickupLocation;
 
     // Debug print to verify values
-    print(
+    debugPrint(
         'DEBUG: TicketScreen initialized with busNumber: $_selectedBusNumber, pickupLocation: $_selectedPickupLocation');
 
     // Fetch bus numbers from Firebase
@@ -106,7 +106,7 @@ class _TicketScreenState extends State<TicketScreen> {
         _selectedPickupLocation = widget.initialPickupLocation;
       });
 
-      print(
+      debugPrint(
           'DEBUG: didChangeDependencies updated pickup location to: $_selectedPickupLocation');
     }
   }
@@ -190,15 +190,11 @@ class _TicketScreenState extends State<TicketScreen> {
     }
 
     await _speech.listen(
-      listenOptions: stt.SpeechListenOptions(),
-      onResult: _onSpeechResult,
-      listenFor: const Duration(seconds: 60),
-      pauseFor: const Duration(seconds: 10),
-      partialResults: true,
-      localeId: 'si-LK',
-      cancelOnError: true,
-      listenMode: stt.ListenMode.confirmation,
-    );
+        listenOptions: stt.SpeechListenOptions(),
+        onResult: _onSpeechResult,
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 10),
+        localeId: 'si-LK');
 
     setState(() {
       _isListening = true;
@@ -268,18 +264,16 @@ Examples:
       // First try a text-only approach which is more reliable for Gemini
       try {
         final prompt = "$systemPrompt\nText: $sinhalaText\nJSON:";
-        final response = await _gemini.text(prompt);
+        final response = await _gemini.chat([
+          Content(parts: [Part.text(prompt)], role: 'user')
+        ]);
 
         if (response != null && response.output != null) {
           log('Gemini text response: ${response.output}');
 
-          // Try to parse JSON from the response
           final jsonResponse = _extractJsonFromResponse(response.output!);
           if (jsonResponse != null) {
-            // Update UI with extracted information
             _updateFieldsFromGeminiResponse(jsonResponse);
-
-            // Show success message
             _showSuccessSnackBar('Information extracted successfully!');
             return; // Success with text method
           }
@@ -307,13 +301,9 @@ Examples:
         log('Gemini chat response: ${response.output}');
 
         try {
-          // Try to parse JSON from the response
           final jsonResponse = _extractJsonFromResponse(response.output!);
           if (jsonResponse != null) {
-            // Update UI with extracted information
             _updateFieldsFromGeminiResponse(jsonResponse);
-
-            // Show success message
             _showSuccessSnackBar('Information extracted successfully!');
           } else {
             log('Failed to extract JSON from Gemini response');
@@ -362,10 +352,12 @@ Examples:
         String cleanedResponse =
             response.replaceAll(RegExp(r'\s+'), ' ').trim();
         // Create a simple JSON structure
-        if (!cleanedResponse.startsWith('{'))
+        if (!cleanedResponse.startsWith('{')) {
           cleanedResponse = '{$cleanedResponse';
-        if (!cleanedResponse.endsWith('}'))
+        }
+        if (!cleanedResponse.endsWith('}')) {
           cleanedResponse = '$cleanedResponse}';
+        }
 
         return json.decode(cleanedResponse) as Map<String, dynamic>;
       }
@@ -511,8 +503,9 @@ Examples:
           }
 
           // Debug print to verify pickup locations and selected value
-          print('DEBUG: Pickup locations loaded: $_pickupLocations');
-          print('DEBUG: Selected pickup location: $_selectedPickupLocation');
+          debugPrint('DEBUG: Pickup locations loaded: $_pickupLocations');
+          debugPrint(
+              'DEBUG: Selected pickup location: $_selectedPickupLocation');
         });
       } else {
         _showErrorSnackBar('Bus routes not found');
@@ -678,7 +671,8 @@ Examples:
                                       shape: BoxShape.circle,
                                       boxShadow: [
                                         BoxShadow(
-                                          color: Colors.black.withOpacity(0.1),
+                                          color: Colors.black
+                                              .withValues(alpha: 0.1),
                                           blurRadius: 10,
                                           spreadRadius: 2,
                                         ),
@@ -726,7 +720,7 @@ Examples:
                                         borderRadius: BorderRadius.circular(12),
                                         border: Border.all(
                                             color: AppTheme.accentColor
-                                                .withOpacity(0.3)),
+                                                .withValues(alpha: 0.3)),
                                       ),
                                       child: Column(
                                         children: [
@@ -737,7 +731,7 @@ Examples:
                                                 .bodySmall
                                                 ?.copyWith(
                                                   color: AppTheme.accentColor
-                                                      .withOpacity(0.7),
+                                                      .withValues(alpha: 0.7),
                                                   fontWeight: FontWeight.bold,
                                                 ),
                                           ),

@@ -56,12 +56,14 @@ class _ConfirmPinScreenState extends State<ConfirmPinScreen> {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to save PIN: ${e.toString()}'),
-          backgroundColor: AppTheme.redColor,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to save PIN: ${e.toString()}'),
+            backgroundColor: AppTheme.redColor,
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() {

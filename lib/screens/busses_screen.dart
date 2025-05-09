@@ -17,7 +17,7 @@ class _BussesScreenState extends State<BussesScreen> {
   final DataService _dataService = DataService();
   bool _isLoading = true;
   List<DocumentSnapshot> _buses = [];
-  Map<String, bool> _busStartStatus = {};
+  final Map<String, bool> _busStartStatus = {};
   final _authService = AuthService();
 
   @override
@@ -100,22 +100,26 @@ class _BussesScreenState extends State<BussesScreen> {
     try {
       await _dataService.busesCollection.doc(busId).delete();
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Bus deleted successfully'),
-          backgroundColor: AppTheme.greenColor,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Bus deleted successfully'),
+            backgroundColor: AppTheme.greenColor,
+          ),
+        );
+      }
 
       // Reload buses
       _loadBuses();
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete bus: ${e.toString()}'),
-          backgroundColor: AppTheme.redColor,
-        ),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to delete bus: ${e.toString()}'),
+            backgroundColor: AppTheme.redColor,
+          ),
+        );
+      }
       setState(() {
         _isLoading = false;
       });
@@ -139,18 +143,20 @@ class _BussesScreenState extends State<BussesScreen> {
         _busStartStatus[busNumber] = newStatus;
         _isLoading = false;
       });
-
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Bus $busNumber ${statusText}ed successfully'),
-          backgroundColor: newStatus ? AppTheme.greenColor : AppTheme.redColor,
-          duration: const Duration(seconds: 2),
-        ),
-      );
+      if (mounted) {
+        // Show success message
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Bus $busNumber ${statusText}ed successfully'),
+            backgroundColor:
+                newStatus ? AppTheme.greenColor : AppTheme.redColor,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
 
       // If starting the bus, navigate to ticket screen
-      if (newStatus) {
+      if (newStatus && mounted) {
         Navigator.pushReplacementNamed(
           context,
           app_constants.AppConstants.ticketRoute,
@@ -163,15 +169,17 @@ class _BussesScreenState extends State<BussesScreen> {
         _loadBuses();
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to $statusText bus: ${e.toString()}'),
-          backgroundColor: AppTheme.redColor,
-        ),
-      );
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to $statusText bus: ${e.toString()}'),
+            backgroundColor: AppTheme.redColor,
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -243,7 +251,7 @@ class _BussesScreenState extends State<BussesScreen> {
                                           Icons.directions_bus_outlined,
                                           size: 80,
                                           color: AppTheme.accentColor
-                                              .withOpacity(0.5),
+                                              .withValues(alpha: 0.5),
                                         ),
                                         const SizedBox(height: 16),
                                         Text(
@@ -348,9 +356,9 @@ class _BussesScreenState extends State<BussesScreen> {
                                                     decoration: BoxDecoration(
                                                       color: isStarted
                                                           ? AppTheme.greenColor
-                                                              .withOpacity(0.2)
+                                                              .withValues(alpha: 0.2)
                                                           : AppTheme.greyColor
-                                                              .withOpacity(0.2),
+                                                              .withValues(alpha: 0.2),
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                               12),
@@ -483,7 +491,7 @@ class _BussesScreenState extends State<BussesScreen> {
                   ),
                   if (_isLoading)
                     Container(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       child: const Center(
                         child: CircularProgressIndicator(),
                       ),

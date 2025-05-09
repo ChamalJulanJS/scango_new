@@ -26,15 +26,15 @@ void main() async {
 
   // Initialize Gemini API
   if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
-    print(
+    debugPrint(
         '⚠️ WARNING: Default Gemini API key detected. Please replace with your actual API key in lib/utils/config.dart');
   }
 
   try {
     Gemini.init(apiKey: AppConfig.geminiApiKey);
-    print('✓ Gemini initialized successfully');
+    debugPrint('✓ Gemini initialized successfully');
   } catch (e) {
-    print('❌ Failed to initialize Gemini: $e');
+    debugPrint('❌ Failed to initialize Gemini: $e');
   }
 
   SystemChrome.setPreferredOrientations([

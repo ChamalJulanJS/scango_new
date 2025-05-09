@@ -61,7 +61,7 @@ class _VerifyPinScreenState extends State<VerifyPinScreen> {
 
       if (mounted) {
         await Future.delayed(Duration(milliseconds: 100));
-        
+
         // Handle normal PIN verification flow
         if (widget.targetRoute == AppConstants.mainRoute) {
           String target = widget.targetRoute;
@@ -82,11 +82,12 @@ class _VerifyPinScreenState extends State<VerifyPinScreen> {
             );
           }
         } else {
-          // For other routes that aren't the main screen, just replace
-          Navigator.of(context).pushReplacementNamed(
-            widget.targetRoute,
-            arguments: widget.arguments,
-          );
+          if (mounted) {
+            Navigator.of(context).pushReplacementNamed(
+              widget.targetRoute,
+              arguments: widget.arguments,
+            );
+          }
         }
       }
     } catch (e) {
@@ -130,11 +131,10 @@ class _VerifyPinScreenState extends State<VerifyPinScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      // Handle back button press
-      onWillPop: () async {
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (result, resultCallback) {
         _goBackToHome();
-        return false; // Prevent default back behavior
       },
       child: Scaffold(
         appBar: AppBar(
