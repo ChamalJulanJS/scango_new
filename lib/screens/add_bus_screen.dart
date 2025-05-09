@@ -6,7 +6,18 @@ import '../theme/app_theme.dart';
 import '../services/data_service.dart';
 
 class AddBusScreen extends StatefulWidget {
-  const AddBusScreen({super.key});
+  final String? busId;
+  final String? busNumber;
+  final List<String>? route;
+  final int? totalSeats;
+  final bool isEditing;
+  const AddBusScreen(
+      {super.key,
+      this.busId,
+      this.busNumber,
+      this.route,
+      this.totalSeats,
+      this.isEditing = false});
 
   @override
   State<AddBusScreen> createState() => _AddBusScreenState();
@@ -21,12 +32,41 @@ class _AddBusScreenState extends State<AddBusScreen> {
   bool _isCheckingDuplicate = false;
 
   // List of available cities (routes)
-  final List<String> _availableCities = [
-    'Kadawatha',
-    'Colombo',
-    'Kandy',
-    'Galle',
-    'Matara'
+  final List<String> colomboCities = [
+    "Colombo 01 - Fort",
+    "Colombo 02 - Slave Island",
+    "Colombo 03 - Kollupitiya",
+    "Colombo 04 - Bambalapitiya",
+    "Colombo 05 - Havelock Town",
+    "Colombo 06 - Wellawatte",
+    "Colombo 07 - Cinnamon Gardens",
+    "Colombo 08 - Borella",
+    "Colombo 09 - Dematagoda",
+    "Colombo 10 - Maradana",
+    "Colombo 11 - Pettah",
+    "Colombo 12 - Hulftsdorp",
+    "Colombo 13 - Kotahena",
+    "Colombo 14 - Grandpass",
+    "Colombo 15 - Mutwal",
+    "Dehiwala",
+    "Mount Lavinia",
+    "Maharagama",
+    "Kottawa",
+    "Nugegoda",
+    "Rajagiriya",
+    "Kotte",
+    "Battaramulla",
+    "Pelawatte",
+    "Thalawathugoda",
+    "Boralesgamuwa",
+    "Homagama",
+    "Pannipitiya",
+    "Padukka",
+    "Kesbewa",
+    "Moratuwa",
+    "Ratmalana",
+    "Angoda",
+    "Avissawella",
   ];
 
   // Selected routes
@@ -38,7 +78,11 @@ class _AddBusScreenState extends State<AddBusScreen> {
     // Add listener to bus number controller for auto uppercase
     _busNumberController.addListener(_onBusNumberChanged);
     // Check if user has any buses
-    // _checkForUserBuses();
+    if (widget.isEditing) {
+      _busNumberController.text = widget.busNumber ?? '';
+      _seatCountController.text = widget.totalSeats?.toString() ?? '';
+      _selectedRoutes.addAll(widget.route ?? []);
+    }
   }
 
   @override
@@ -49,11 +93,9 @@ class _AddBusScreenState extends State<AddBusScreen> {
     super.dispose();
   }
 
-  // Convert bus number to uppercase and validate characters
   void _onBusNumberChanged() {
     final text = _busNumberController.text;
 
-    // Only process if there's a change to avoid infinite loop
     if (text != text.toUpperCase()) {
       final String newText = text.toUpperCase();
       _busNumberController.value = _busNumberController.value.copyWith(
@@ -62,8 +104,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
       );
     }
 
-    // Trigger duplicate check with debounce
-    if (text.isNotEmpty) {
+    if (text.isNotEmpty && !widget.isEditing) {
       _checkDuplicateBusNumber(text);
     } else {
       setState(() {
@@ -72,9 +113,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
     }
   }
 
-  // Debounced check for duplicate bus number
   Future<void> _checkDuplicateBusNumber(String busNumber) async {
-    // Don't check if already checking or if the field is being cleared
     if (_isCheckingDuplicate || busNumber.isEmpty) return;
 
     setState(() {
@@ -82,7 +121,6 @@ class _AddBusScreenState extends State<AddBusScreen> {
       _errorMessage = null;
     });
 
-    // Add a small delay to avoid too many Firestore queries
     await Future.delayed(const Duration(milliseconds: 500));
 
     try {
@@ -216,6 +254,8 @@ class _AddBusScreenState extends State<AddBusScreen> {
         return StatefulBuilder(
           builder: (context, setState) {
             return AlertDialog(
+              insetPadding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
               title: Text(
                 'Select Routes',
                 style: TextStyle(
@@ -229,7 +269,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
                 child: SingleChildScrollView(
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: _availableCities.map((city) {
+                    children: colomboCities.map((city) {
                       return CheckboxListTile(
                         title: Text(
                           city,
@@ -327,6 +367,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
                       ),
                       const SizedBox(height: 10),
                       TextField(
+                        readOnly: widget.isEditing,
                         controller: _busNumberController,
                         textCapitalization: TextCapitalization.characters,
                         inputFormatters: [
@@ -459,7 +500,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
                           child: _isLoading
                               ? const Center(child: CircularProgressIndicator())
                               : CustomButton(
-                                  text: 'Add',
+                                  text: widget.isEditing ? 'Update' : 'Add',
                                   onPressed: _addBus,
                                   backgroundColor: AppTheme.redColor,
                                 ),

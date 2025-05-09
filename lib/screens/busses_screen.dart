@@ -356,9 +356,11 @@ class _BussesScreenState extends State<BussesScreen> {
                                                     decoration: BoxDecoration(
                                                       color: isStarted
                                                           ? AppTheme.greenColor
-                                                              .withValues(alpha: 0.2)
+                                                              .withValues(
+                                                                  alpha: 0.2)
                                                           : AppTheme.greyColor
-                                                              .withValues(alpha: 0.2),
+                                                              .withValues(
+                                                                  alpha: 0.2),
                                                       borderRadius:
                                                           BorderRadius.circular(
                                                               12),
@@ -386,7 +388,7 @@ class _BussesScreenState extends State<BussesScreen> {
                                                 style: Theme.of(context)
                                                     .textTheme
                                                     .bodyMedium,
-                                                maxLines: 1,
+                                                maxLines: 3,
                                                 overflow: TextOverflow.ellipsis,
                                               ),
                                               const SizedBox(height: 4),
@@ -408,7 +410,7 @@ class _BussesScreenState extends State<BussesScreen> {
                                                         context,
                                                         app_constants
                                                             .AppConstants
-                                                            .addBusRoute, // Using add bus route for editing as well
+                                                            .addBusRoute,
                                                         arguments: {
                                                           'busId': bus.id,
                                                           'busNumber':

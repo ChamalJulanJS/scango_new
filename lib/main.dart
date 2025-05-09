@@ -74,14 +74,32 @@ class MyApp extends StatelessWidget {
         },
         AppConstants.mainRoute: (context) => const MainScreen(),
         AppConstants.homeRoute: (context) => const MainScreen(initialTab: 0),
-        AppConstants.addBusRoute: (context) => const AddBusScreen(),
+        AppConstants.addBusRoute: (context) {
+          final args = ModalRoute.of(context)?.settings.arguments
+              as Map<String, dynamic>?;
+          final busNumber = args?['busNumber'] as String?;
+          final busId = args?['busId'] as String?;
+          final route = args?['route'] as List<String>?;
+          final totalSeats = args?['totalSeats'] as int?;
+          final isEditing = args?['isEditing'] as bool?;
+          return AddBusScreen(
+            busNumber: busNumber,
+            busId: busId,
+            route: route,
+            totalSeats: totalSeats,
+            isEditing: isEditing ?? false,
+          );
+        },
         AppConstants.bussesRoute: (context) => const MainScreen(initialTab: 1),
         AppConstants.ticketRoute: (context) {
           final args = ModalRoute.of(context)?.settings.arguments
               as Map<String, dynamic>?;
           final busNumber = args?['busNumber'] as String?;
           final pickupLocation = args?['pickupLocation'] as String?;
-          return MainScreen(initialTab: 2, busNumber: busNumber, pickupLocation: pickupLocation);
+          return MainScreen(
+              initialTab: 2,
+              busNumber: busNumber,
+              pickupLocation: pickupLocation);
         },
         AppConstants.historyRoute: (context) => const MainScreen(initialTab: 3),
         AppConstants.profileRoute: (context) => const MainScreen(initialTab: 4),
