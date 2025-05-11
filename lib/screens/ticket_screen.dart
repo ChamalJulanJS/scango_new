@@ -569,7 +569,7 @@ Examples:
         });
         return;
       }
-      
+
       // Check if destination is in the bus routes
       final isValidDestination = await _validateDestination();
       if (!isValidDestination) {
@@ -624,20 +624,6 @@ Examples:
         _isLoading = false;
       });
     }
-  }
-
-  // Shows error as SnackBar without updating _errorMessage state
-  void _showErrorSnackBar(String message) {
-    // Clear any existing SnackBars
-    ScaffoldMessenger.of(context).clearSnackBars();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppTheme.redColor,
-        duration: const Duration(seconds: 2),
-      ),
-    );
   }
 
   @override
@@ -1061,32 +1047,46 @@ Examples:
           .collection('Buses')
           .where('busNumber', isEqualTo: _selectedBusNumber)
           .get();
-      
+
       if (busDoc.docs.isEmpty) return false;
-      
+
       final routes = List<String>.from(busDoc.docs.first.data()['route'] ?? []);
       final destination = _destinationController.text.trim();
-      
+
       // First check if the destination exactly matches any route
       if (routes.contains(destination)) return true;
-      
+
       // If not an exact match, use Gemini to check if the destination is included
-      final prompt = """I have a bus with the following routes: ${routes.join(', ')}. 
-      Is '$destination' included in or near these routes? Answer only with 'yes' or 'no'."""; 
-      
+      final prompt =
+          """I have a bus with the following routes: ${routes.join(', ')}. 
+      Is '$destination' included in or near these routes? Answer only with 'yes' or 'no'.""";
+
       final response = await _gemini.chat([
         Content(parts: [Part.text(prompt)], role: 'user')
       ]);
-      
+
       if (response != null && response.output != null) {
         final answer = response.output!.toLowerCase();
         return answer.contains('yes');
       }
-      
+
       return false;
     } catch (e) {
       debugPrint('Error validating destination: $e');
       return true; // Allow the ticket if validation fails
     }
+  }
+  // Shows error as SnackBar without updating _errorMessage state
+  void _showErrorSnackBar(String message) {
+    // Clear any existing SnackBars
+    ScaffoldMessenger.of(context).clearSnackBars();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.redColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 }
