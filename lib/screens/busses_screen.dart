@@ -63,9 +63,10 @@ class _BussesScreenState extends State<BussesScreen> {
           ),
         );
       }
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted)
+        setState(() {
+          _isLoading = false;
+        });
     }
   }
 
@@ -138,6 +139,18 @@ class _BussesScreenState extends State<BussesScreen> {
     try {
       // Update bus status in Firestore
       await _dataService.updateBusStatus(busId, newStatus);
+
+      // If starting the bus, reset availableSeats to totalSeats
+      if (newStatus) {
+        final busDoc = await _dataService.getBusById(busId);
+        if (busDoc != null && busDoc.exists) {
+          final data = busDoc.data() as Map<String, dynamic>;
+          final int totalSeats = data['totalSeats'] ?? 0;
+          await _dataService.busesCollection.doc(busId).update({
+            'availableSeats': totalSeats,
+          });
+        }
+      }
 
       setState(() {
         _busStartStatus[busNumber] = newStatus;

@@ -23,6 +23,9 @@ class AppTheme {
         surface: primaryColor,
         error: redColor,
       ),
+      progressIndicatorTheme: const ProgressIndicatorThemeData(
+        color: accentColor,
+      ),
       textTheme: TextTheme(
         displayLarge: GoogleFonts.poppins(
           fontSize: 48.0,

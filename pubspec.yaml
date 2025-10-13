@@ -45,6 +45,7 @@ dependencies:
   firebase_storage: ^12.4.5
   speech_to_text: ^7.0.0
   flutter_gemini: ^3.0.0
+  nfc_manager: ^3.5.0
 
 dev_dependencies:
   flutter_test:

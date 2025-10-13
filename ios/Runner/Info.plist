@@ -49,5 +49,12 @@
 	<string>This app needs microphone access to enable voice commands and speech recognition features</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>This app uses speech recognition to convert your voice commands into text</string>
+		<key>NFCReaderUsageDescription</key>
+	<string>This app needs NFC access to process payments using contactless cards</string>
+	<key>com.apple.developer.nfc.readersession.formats</key>
+	<array>
+		<string>NDEF</string>
+		<string>TAG</string>
+	</array>
 </dict>
 </plist>

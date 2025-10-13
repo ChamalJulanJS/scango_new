@@ -27,7 +27,7 @@ class TicketScreen extends StatefulWidget {
 }
 
 class _TicketScreenState extends State<TicketScreen> {
-  final bool _autoProcess = false;
+  bool _autoProcess = false;
   final AuthService _authService = AuthService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   // Speech to text
@@ -50,6 +50,9 @@ class _TicketScreenState extends State<TicketScreen> {
   List<String> _busNumbers = [];
   List<String> _pickupLocations = [];
   bool _isLoading = true;
+  int? _availableSeats; // Add this to store available seats
+  String? _busDocId; // Store the Firestore doc ID for the selected bus
+  String? _busFullError; // For UI error message
 
   @override
   void initState() {
@@ -73,6 +76,7 @@ class _TicketScreenState extends State<TicketScreen> {
     // If initial bus number is provided but pickup locations aren't loaded yet, fetch them
     if (_selectedBusNumber != null && _pickupLocations.isEmpty) {
       _fetchPickupLocations(_selectedBusNumber!);
+      _fetchAvailableSeats(_selectedBusNumber!);
     }
 
     // If we came from the Busses screen with a started bus, show a message
@@ -462,10 +466,10 @@ Examples:
     } catch (e) {
       if (mounted) {
         _showErrorSnackBar('Failed to load bus numbers: ${e.toString()}');
+        setState(() {
+          _isLoading = false;
+        });
       }
-      setState(() {
-        _isLoading = false;
-      });
     }
   }
 
@@ -517,6 +521,42 @@ Examples:
       _showErrorSnackBar('Failed to load pickup locations: ${e.toString()}');
       setState(() {
         _isLoading = false;
+      });
+    }
+  }
+
+  // Fetch available seats for the selected bus
+  Future<void> _fetchAvailableSeats(String busNumber) async {
+    setState(() {
+      _availableSeats = null;
+      _busFullError = null;
+    });
+    try {
+      final busQuery = await _firestore
+          .collection('Buses')
+          .where('busNumber', isEqualTo: busNumber)
+          .limit(1)
+          .get();
+      if (busQuery.docs.isNotEmpty) {
+        final doc = busQuery.docs.first;
+        final data = doc.data();
+        _busDocId = doc.id;
+        setState(() {
+          _availableSeats = data['availableSeats'] ?? data['totalSeats'] ?? 0;
+          if (_availableSeats == 0) {
+            _busFullError = 'Bus is full';
+          }
+        });
+      } else {
+        setState(() {
+          _availableSeats = 0;
+          _busFullError = 'Bus not found';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _availableSeats = 0;
+        _busFullError = 'Error loading bus info';
       });
     }
   }
@@ -579,6 +619,23 @@ Examples:
         });
         return;
       }
+
+      // Check if seats are available
+      if (_availableSeats == 0) {
+        _showErrorSnackBar('Bus is full. No seats available.');
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Decrement available seats
+      if (_busDocId != null) {
+        await _firestore.collection('Buses').doc(_busDocId).update({
+          'availableSeats': (_availableSeats! - seatCount),
+        });
+      }
+
       await _firestore.collection('Ticket').add({
         'userId': userId,
         'busNumber': _selectedBusNumber,
@@ -628,6 +685,7 @@ Examples:
 
   @override
   Widget build(BuildContext context) {
+    _autoProcess = widget.initialBusNumber != null;
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -644,9 +702,8 @@ Examples:
                           const SizedBox(height: 20),
                           const Center(child: AppLogo()),
                           const SizedBox(height: 30),
-                          if (_autoProcess) _voiceRecognitionButton(),
+                          _voiceRecognitionButton(),
                           const SizedBox(height: 20),
-
                           // Bus Number Dropdown
                           Text(
                             'Bus Number',
@@ -654,6 +711,37 @@ Examples:
                           ),
                           const SizedBox(height: 10),
                           _buildBusNumberDropdown(),
+                          if (_availableSeats != null)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                              child: Text(
+                                'Remaining Seats: $_availableSeats',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: (_availableSeats ?? 0) == 0
+                                          ? AppTheme.redColor
+                                          : AppTheme.greenColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                              ),
+                            ),
+                          if (_busFullError != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: Text(
+                                _busFullError!,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: AppTheme.redColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                              ),
+                            ),
                           const SizedBox(height: 20),
 
                           // Pickup Location Dropdown
@@ -933,9 +1021,12 @@ Examples:
                 _selectedBusNumber = newValue;
                 _selectedPickupLocation = null;
                 _pickupLocations = [];
+                _availableSeats = null;
+                _busFullError = null;
               });
               if (newValue != null) {
                 _fetchPickupLocations(newValue);
+                _fetchAvailableSeats(newValue);
               }
             },
     );
@@ -1076,6 +1167,7 @@ Examples:
       return true; // Allow the ticket if validation fails
     }
   }
+
   // Shows error as SnackBar without updating _errorMessage state
   void _showErrorSnackBar(String message) {
     // Clear any existing SnackBars

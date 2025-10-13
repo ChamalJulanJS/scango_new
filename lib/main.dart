@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'screens/nfc_payment_screen.dart';
 import 'services/firebase_service.dart';
 import 'services/auth_service.dart';
 import 'screens/login_screen.dart';
@@ -106,6 +107,7 @@ class MyApp extends StatelessWidget {
         AppConstants.editProfileRoute: (context) => const EditProfileScreen(),
         AppConstants.editPinRoute: (context) => const EditPinScreen(),
         AppConstants.checkoutRoute: (context) => const CheckoutScreen(),
+        AppConstants.nfcPaymentRoute: (context) => const NFCPaymentScreen(),
       },
     );
   }

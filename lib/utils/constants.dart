@@ -16,6 +16,8 @@ class AppConstants {
   static const String editProfileRoute = '/edit_profile';
   static const String editPinRoute = '/edit_pin';
   static const String checkoutRoute = '/checkout';
+  static const String nfcPaymentRoute = '/nfc_payment';
+  static const String paymentRoute = '/payment';
 }
 
 class NavigationIcons {

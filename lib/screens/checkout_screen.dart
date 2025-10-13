@@ -15,6 +15,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   Map<String, dynamic> _ticketDetails = {};
   bool _isProcessing = false;
   bool _isComplete = false;
+  bool _isRouted = false;
 
   @override
   void initState() {
@@ -28,15 +29,43 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (args != null && args is Map<String, dynamic>) {
       _ticketDetails = args;
 
+      // Check if auto-processing is requested
       if (_ticketDetails.containsKey('autoProcess') &&
           _ticketDetails['autoProcess'] == true) {
+        // Automatically process payment after a short delay
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _processPayment();
+          setState(() {
+            _isProcessing = true;
+          });
+          Future.delayed(const Duration(seconds: 5), () {
+            if (mounted) {
+              setState(() {
+                _isProcessing = false;
+              });
+              if (mounted && !_isRouted) {
+                _isRouted = true;
+                Navigator.pushNamed(
+                  context,
+                  AppConstants.nfcPaymentRoute,
+                  arguments: {
+                    'initialTab': 2, // Navigate to ticket tab
+                    'busNumber': _ticketDetails['busNumber'],
+                    'pickupLocation': _ticketDetails['pickupLocation'],
+                    'destination': _ticketDetails['destination'],
+                    'seatCount': _ticketDetails['seatCount'],
+                    'totalPrice':
+                        _ticketDetails['totalPrice'] ?? _calculatePrice(),
+                  },
+                );
+              }
+            }
+          });
         });
       }
     }
   }
 
+  // Process payment and return to ticket screen
   Future<void> _processPayment() async {
     if (!mounted) return;
 
@@ -44,8 +73,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _isProcessing = true;
     });
 
+    // Simulate payment processing
     await Future.delayed(const Duration(seconds: 2));
 
+    // Check if still mounted after async operation
     if (!mounted) return;
 
     setState(() {
@@ -53,6 +84,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _isComplete = true;
     });
 
+    // Show success message if mounted
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -63,15 +95,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
     }
 
-    await Future.delayed(const Duration(seconds: 3));
+    // Wait a moment, then return to ticket screen
+    await Future.delayed(const Duration(seconds: 1));
 
     if (mounted) {
       Navigator.pushNamedAndRemoveUntil(
         context,
-        AppConstants.ticketRoute,
+        AppConstants.mainRoute,
         (route) => false,
         arguments: {
-          'initialTab': 2, 
+          'initialTab': 2, // Navigate to ticket tab
           'busNumber': _ticketDetails['busNumber'],
           'pickupLocation': _ticketDetails['pickupLocation'],
         },
@@ -117,6 +150,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                           'Rs. ${_ticketDetails['totalPrice']?.toStringAsFixed(0) ?? _calculatePrice()}'),
                       const SizedBox(height: 40),
 
+                      // Processing or Action Section
                       if (_isProcessing)
                         Center(
                           child: Column(
@@ -202,6 +236,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             CustomBottomNavigationBar(
               currentIndex: _currentIndex,
               onTap: (index) {
+                // Disable navigation during processing
                 if (_isProcessing) return;
 
                 setState(() {

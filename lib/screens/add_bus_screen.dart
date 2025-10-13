@@ -164,8 +164,8 @@ class _AddBusScreenState extends State<AddBusScreen> {
       return;
     }
 
-    if (_selectedRoutes.length < 2) {
-      _showError('Please select at least 2 cities for the route');
+    if (_selectedRoutes.length != 2) {
+      _showError('Please select exactly 2 cities for the route');
       return;
     }
 
@@ -186,41 +186,59 @@ class _AddBusScreenState extends State<AddBusScreen> {
     });
 
     try {
-      // Check for duplicate bus number
-      final isDuplicate = await _dataService.isBusNumberExists(busNumber);
-      if (isDuplicate) {
-        _showError('Bus number already exists');
-        setState(() {
-          _isLoading = false;
+      if (widget.isEditing && widget.busId != null) {
+        // Update existing bus (bus number is read-only when editing)
+        await _dataService.busesCollection.doc(widget.busId!).update({
+          'route': _selectedRoutes,
+          'totalSeats': seatCount,
         });
-        return;
-      }
 
-      // Add bus to Firestore
-      await _dataService.addBus(
-        busNumber: busNumber,
-        route: _selectedRoutes,
-        totalSeats: seatCount,
-      );
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bus updated successfully'),
+              backgroundColor: AppTheme.greenColor,
+            ),
+          );
+          Navigator.pop(context, true);
+        }
+      } else {
+        // Check for duplicate bus number before adding
+        final isDuplicate = await _dataService.isBusNumberExists(busNumber);
+        if (isDuplicate) {
+          _showError('Bus number already exists');
+          setState(() {
+            _isLoading = false;
+          });
+          return;
+        }
 
-      // Clear fields
-      _busNumberController.clear();
-      _seatCountController.clear();
-      setState(() {
-        _selectedRoutes.clear();
-      });
-
-      // Show success message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Bus added successfully'),
-            backgroundColor: AppTheme.greenColor,
-          ),
+        // Add bus to Firestore
+        await _dataService.addBus(
+          busNumber: busNumber,
+          route: _selectedRoutes,
+          totalSeats: seatCount,
         );
+
+        // Clear fields
+        _busNumberController.clear();
+        _seatCountController.clear();
+        setState(() {
+          _selectedRoutes.clear();
+        });
+
+        // Show success message
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Bus added successfully'),
+              backgroundColor: AppTheme.greenColor,
+            ),
+          );
+        }
       }
     } catch (e) {
-      _showError('Failed to add bus: ${e.toString()}');
+      _showError('Failed to save bus: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() {
@@ -257,7 +275,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
               insetPadding:
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
               title: Text(
-                'Select Routes',
+                'Select Exactly 2 Routes',
                 style: TextStyle(
                   color: AppTheme.accentColor,
                   fontWeight: FontWeight.bold,
@@ -285,7 +303,18 @@ class _AddBusScreenState extends State<AddBusScreen> {
                         onChanged: (isChecked) {
                           setState(() {
                             if (isChecked!) {
-                              tempSelectedRoutes.add(city);
+                              if (tempSelectedRoutes.length >= 2) {
+                                // Prevent selecting more than two
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: const Text('You can select only 2 routes'),
+                                    backgroundColor: AppTheme.redColor,
+                                    duration: const Duration(seconds: 2),
+                                  ),
+                                );
+                              } else {
+                                tempSelectedRoutes.add(city);
+                              }
                             } else {
                               tempSelectedRoutes.remove(city);
                             }
@@ -316,6 +345,16 @@ class _AddBusScreenState extends State<AddBusScreen> {
                   ),
                   child: const Text('Save'),
                   onPressed: () {
+                    if (tempSelectedRoutes.length != 2) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: const Text('Please select exactly 2 routes'),
+                          backgroundColor: AppTheme.redColor,
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                      return;
+                    }
                     // Update the actual selected routes
                     this.setState(() {
                       _selectedRoutes.clear();
