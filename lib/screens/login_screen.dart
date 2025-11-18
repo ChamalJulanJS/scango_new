@@ -1,3 +1,4 @@
+import '../theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import '../utils/constants.dart';
 import '../widgets/common_widgets.dart';
@@ -59,6 +60,48 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  Future<void> _handleForgotPassword() async {
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty) {
+      setState(() {
+        _errorMessage = 'Please enter your email address to reset password';
+      });
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      // FIX: Use named parameter 'email:' here
+      await _authService.sendPasswordResetEmail(email: email);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Password reset email sent! Please check your inbox.'),
+            backgroundColor:
+                AppTheme.greenColor, // This error should disappear now
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() {
+        _errorMessage = e.toString();
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -87,6 +130,19 @@ class _LoginScreenState extends State<LoginScreen> {
                   hintText: 'Password',
                   controller: _passwordController,
                   obscureText: true,
+                ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: _isLoading ? null : _handleForgotPassword,
+                    child: Text(
+                      'Forgot Password?',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppTheme.accentColor,
+                            fontWeight: FontWeight.w600,
+                          ),
+                    ),
+                  ),
                 ),
                 if (_errorMessage != null) ...[
                   const SizedBox(height: 10),
