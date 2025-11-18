@@ -188,6 +188,14 @@ class _TicketScreenState extends State<TicketScreen> {
 
   // Start listening to speech
   void _startListening() async {
+    // --- ADD THIS BLOCK ---
+    // If we know the seat count and it is 0 (or less), stop here.
+    if (_availableSeats != null && _availableSeats! <= 0) {
+      _showErrorSnackBar('No Available Seats');
+      return; // This 'return' stops the rest of the function from running
+    }
+    // ----------------------
+
     if (!_speechEnabled) {
       log('Speech recognition not available');
       return;
@@ -567,21 +575,19 @@ Examples:
   }
 
   Future<void> _submitTicket() async {
+    // 1. Validate Inputs
     if (_selectedBusNumber == null) {
       _showErrorSnackBar('Please select a bus number');
       return;
     }
-
     if (_selectedPickupLocation == null) {
       _showErrorSnackBar('Please select a pickup location');
       return;
     }
-
     if (_destinationController.text.isEmpty) {
       _showErrorSnackBar('Please enter a destination');
       return;
     }
-
     if (_seatCountController.text.isEmpty) {
       _showErrorSnackBar('Please enter the number of seats');
       return;
@@ -593,93 +599,65 @@ Examples:
       return;
     }
 
-    final totalPrice = _calculateTotalPrice();
-
     setState(() {
       _isLoading = true;
     });
-    _showInfoSnackBar('Processing your ticket...');
 
-    try {
-      final userId = _authService.currentUser?.uid;
-      if (userId == null) {
-        _showErrorSnackBar('User not authenticated');
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Check if destination is in the bus routes
-      final isValidDestination = await _validateDestination();
-      if (!isValidDestination) {
-        _showErrorSnackBar('Destination not on this bus route');
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Check if seats are available
-      if (_availableSeats == 0) {
-        _showErrorSnackBar('Bus is full. No seats available.');
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Decrement available seats
-      if (_busDocId != null) {
-        await _firestore.collection('Buses').doc(_busDocId).update({
-          'availableSeats': (_availableSeats! - seatCount),
-        });
-      }
-
-      await _firestore.collection('Ticket').add({
-        'userId': userId,
-        'busNumber': _selectedBusNumber,
-        'pickup': _selectedPickupLocation,
-        'destination': _destinationController.text.trim(),
-        'seatCount': seatCount,
-        'totalPrice': totalPrice,
-        'timestamp': FieldValue.serverTimestamp(),
-        'isUsed': false,
-      });
-
-      // Show success message
-      _showSuccessSnackBar('Ticket created successfully!');
-
-      // Process for checkout (simulating payment processing without user interaction)
-      await Future.delayed(const Duration(seconds: 1));
-
-      // Go to checkout screen first - this will show the ticket details
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          // Navigate to checkout screen
-          Navigator.pushNamed(
-            context,
-            AppConstants.checkoutRoute,
-            arguments: {
-              'busNumber': _selectedBusNumber,
-              'pickupLocation': _selectedPickupLocation,
-              'destination': _destinationController.text.trim(),
-              'seatCount': _seatCountController.text,
-              'totalPrice': totalPrice,
-              'autoProcess': true,
-            },
-          );
-        });
-      }
-    } catch (e) {
-      _showErrorSnackBar('Failed to submit ticket: ${e.toString()}');
+    // 2. Validate Destination
+    final isValidDestination = await _validateDestination();
+    if (!isValidDestination) {
+      _showErrorSnackBar('Destination not on this bus route');
       setState(() {
         _isLoading = false;
       });
+      return;
+    }
+
+    // 3. Check Availability (BUT DO NOT DEDUCT YET)
+    final totalPrice = _calculateTotalPrice();
+
+    // --- THIS IS THE CRITICAL FIX FOR NEGATIVE SEATS ---
+    if (_availableSeats != null && _availableSeats! < seatCount) {
+      if (_availableSeats == 0) {
+        _showErrorSnackBar('Bus is full. No seats available.');
+      } else {
+        _showErrorSnackBar(
+            'Only $_availableSeats seats available. You requested $seatCount.');
+      }
+      // Stop the loading spinner
+      setState(() {
+        _isLoading = false;
+      });
+      // STOP the function here so it never goes to checkout
+      return;
+    }
+    // ---------------------------------------------------
+
+    // 4. Navigate to Checkout (Pass data for the next screen to use)
+    if (mounted) {
+      final userId = _authService.currentUser?.uid;
+
+      setState(() {
+        _isLoading = false;
+      });
+
+      Navigator.pushNamed(
+        context,
+        AppConstants.checkoutRoute,
+        arguments: {
+          'busNumber': _selectedBusNumber,
+          'pickupLocation': _selectedPickupLocation,
+          'destination': _destinationController.text.trim(),
+          'seatCount': _seatCountController.text,
+          'totalPrice': totalPrice,
+          'autoProcess': _autoProcess,
+
+          // Pass these IDs so the next screen can update the DB
+          'busDocId': _busDocId,
+          'userId': userId,
+          'currentAvailableSeats': _availableSeats,
+        },
+      );
     }
   }
 
