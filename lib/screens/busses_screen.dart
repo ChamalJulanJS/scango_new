@@ -63,10 +63,11 @@ class _BussesScreenState extends State<BussesScreen> {
           ),
         );
       }
-      if (mounted)
+      if (mounted) {
         setState(() {
           _isLoading = false;
         });
+      }
     }
   }
 

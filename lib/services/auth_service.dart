@@ -174,4 +174,17 @@ class AuthService {
         return Exception('Authentication error: ${e.message}');
     }
   }
+
+  // ADD THIS NEW METHOD
+  /// Sends a password reset email to the provided email address.
+  Future<void> sendPasswordResetEmail({required String email}) async {
+    try {
+      await FirebaseService.auth.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      // Use your existing handler to throw a user-friendly exception
+      throw _handleFirebaseAuthException(e);
+    } catch (e) {
+      throw Exception('Failed to send reset email: ${e.toString()}');
+    }
+  }
 }

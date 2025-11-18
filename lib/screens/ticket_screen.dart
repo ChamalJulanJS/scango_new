@@ -998,7 +998,7 @@ Examples:
     }
 
     return DropdownButtonFormField<String>(
-      value: _selectedBusNumber,
+      initialValue: _selectedBusNumber,
       decoration: InputDecoration(
         labelText: 'Bus Number',
         border: OutlineInputBorder(

@@ -17,7 +17,7 @@ class _EditPinScreenState extends State<EditPinScreen> {
   final TextEditingController _pinController = TextEditingController();
   final TextEditingController _confirmPinController = TextEditingController();
   
-  bool _isLoading = false;
+  final bool _isLoading = false;
   bool _isSaving = false;
   String? _errorMessage;
   bool _obscurePin = true;
