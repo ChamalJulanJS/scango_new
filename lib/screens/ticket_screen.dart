@@ -627,7 +627,6 @@ If not found, use null.
     return DropdownButtonFormField<String>(
       initialValue: _selectedBusNumber,
       decoration: InputDecoration(
-        labelText: 'Bus Number',
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
         ),
