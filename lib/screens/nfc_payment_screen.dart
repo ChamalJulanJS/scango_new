@@ -67,8 +67,8 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
           _nfcStatus = 'NFC is ready. Tap your credit card to pay';
         } else {
           _isNFCReady = false;
-          // Show the message for non-NFC phones
-          _nfcStatus = 'NFC not available or not supported on this device';
+          // STRICT MESSAGE
+          _nfcStatus = 'Payment Failed: This device does not support NFC.';
         }
       });
     } catch (e) {
@@ -76,7 +76,7 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
       setState(() {
         _nfcAvailable = false;
         _isNFCReady = false;
-        _nfcStatus = 'NFC not available or not supported on this device';
+        _nfcStatus = 'NFC Error: Unable to verify device capabilities.';
       });
     }
   }
@@ -91,15 +91,14 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
 
     try {
       await NfcManager.instance.startSession(onDiscovered: (NfcTag tag) async {
-        // NFC Tag Detected! Trigger booking automatically.
+        // NFC Tag Detected! Trigger booking.
         await _processBooking();
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _nfcStatus = 'Error starting NFC. Please pay manually.';
+        _nfcStatus = 'Error starting NFC session. Please try again.';
         _isNFCListening = false;
-        _nfcAvailable = false; // Switch to manual mode if NFC fails
       });
     }
   }
@@ -116,7 +115,7 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
     }
   }
 
-  // UNIFIED BOOKING FUNCTION (Used by both NFC Tap and Manual Button)
+  // Booking function - ONLY called by NFC tap now
   Future<void> _processBooking() async {
     // 1. Stop scanning if we were scanning
     await _stopNFCListening();
@@ -135,21 +134,19 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
       final busDocId = _ticketDetails['busDocId'];
       final seatCountStr = _ticketDetails['seatCount'];
       final userId = _ticketDetails['userId'];
-      // Safe parsing for seat count
       final int seats = int.tryParse(seatCountStr.toString()) ?? 0;
 
       if (busDocId != null && userId != null && seats > 0) {
         final busRef =
             FirebaseFirestore.instance.collection('Buses').doc(busDocId);
 
-        // --- SAFE TRANSACTION TO PREVENT NEGATIVE SEATS ---
+        // --- SAFE TRANSACTION ---
         await FirebaseFirestore.instance.runTransaction((transaction) async {
           final busSnapshot = await transaction.get(busRef);
           if (!busSnapshot.exists) throw Exception("Bus not found!");
 
           final data = busSnapshot.data() as Map<String, dynamic>;
 
-          // Handle both String and Int types safely
           int currentAvailable = 0;
           var availableVal = data['availableSeats'];
           if (availableVal is int) {
@@ -157,7 +154,6 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
           } else if (availableVal is String) {
             currentAvailable = int.tryParse(availableVal) ?? 0;
           } else {
-            // Fallback if field is missing
             var totalVal = data['totalSeats'];
             currentAvailable = (totalVal is int)
                 ? totalVal
@@ -187,7 +183,6 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
             'isUsed': false,
           });
         });
-        // --------------------------------------------------
 
         if (!mounted) return;
         setState(() {
@@ -196,7 +191,6 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
           _nfcStatus = 'Payment & Booking Successful!';
         });
 
-        // Redirect to Ticket/Home screen after success
         await Future.delayed(const Duration(seconds: 2));
         if (mounted) {
           Navigator.pushNamedAndRemoveUntil(
@@ -218,8 +212,10 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
         _nfcStatus = 'Failed: ${e.toString().replaceAll("Exception: ", "")}';
         _isPaymentProcessing = false;
       });
-      // If NFC failed, allow manual retry
-      _nfcAvailable = false;
+      // Allow retry if it was a transaction error (but not if NFC is missing)
+      if (_nfcAvailable) {
+        _startNFCListening();
+      }
     }
   }
 
@@ -306,33 +302,16 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
                             onPressed: _retryNFC,
                             width: 200),
 
-                      // 2. MANUAL CONFIRM BUTTON (The Fix for your problem)
-                      // This appears if NFC is NOT available, allowing you to pay anyway.
-                      if (!_isPaymentProcessing &&
-                          !_isPaymentComplete &&
-                          !_nfcAvailable)
-                        Column(
-                          children: [
-                            const SizedBox(height: 10),
-                            CustomButton(
-                                text: 'Confirm Payment',
-                                onPressed:
-                                    _processBooking, // Calls the logic manually
-                                backgroundColor: AppTheme.greenColor,
-                                width: 200),
-                          ],
-                        ),
+                      // NOTE: The "Confirm Payment" button is GONE.
+                      // Users without NFC cannot proceed.
 
-                      // 3. Cancel Button
+                      // 2. Cancel Button
                       if (!_isPaymentProcessing && !_isPaymentComplete)
                         Padding(
                           padding: const EdgeInsets.only(top: 10.0),
                           child: CustomButton(
-                              text: 'Cancel',
+                              text: _nfcAvailable ? 'Cancel' : 'Go Back',
                               onPressed: () {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(content: Text('Cancelled')));
-                                // FIX: Redirect correctly on cancel
                                 Navigator.pushNamedAndRemoveUntil(
                                   context,
                                   AppConstants.ticketRoute,
@@ -353,7 +332,6 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
                 ),
               ),
             ),
-            // Bottom Navigation (Index 2 is Ticket)
             CustomBottomNavigationBar(
               currentIndex: 2,
               onTap: (index) {
