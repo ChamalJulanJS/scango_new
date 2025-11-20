@@ -29,23 +29,25 @@ class TicketScreen extends StatefulWidget {
 class _TicketScreenState extends State<TicketScreen> {
   final AuthService _authService = AuthService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
   // Speech to text
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _isListening = false;
   bool _isProcessing = false;
   String _lastWords = '';
   bool _speechEnabled = false;
+
   // Gemini instance
   final Gemini _gemini = Gemini.instance;
 
   String? _selectedBusNumber;
   String? _selectedPickupLocation;
 
-  // Controllers for the text fields
+  // Controllers
   final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _seatCountController = TextEditingController();
 
-  // Data from Firebase
+  // Data
   List<String> _busNumbers = [];
   List<String> _pickupLocations = [];
   bool _isLoading = true;
@@ -57,32 +59,26 @@ class _TicketScreenState extends State<TicketScreen> {
   void initState() {
     super.initState();
 
-    // Initialize values from widget parameters
     _selectedBusNumber = widget.initialBusNumber;
     _selectedPickupLocation = widget.initialPickupLocation;
 
-    // Fetch bus numbers from Firebase
     _fetchBusNumbers();
-
-    // Initialize speech and Gemini
     _initSpeech();
-    _initGemini();
+    _initGemini(); // Fixed: Method is now defined below
 
-    // If initial bus number is provided, load its data
     if (_selectedBusNumber != null && _pickupLocations.isEmpty) {
       _fetchPickupLocations(_selectedBusNumber!);
       _fetchAvailableSeats(_selectedBusNumber!);
     }
 
     if (_selectedBusNumber != null) {
-      Future.delayed(Duration(milliseconds: 500), () {
+      Future.delayed(const Duration(milliseconds: 500), () {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                  'Bus $_selectedBusNumber selected. Enter details to book.'),
+              content: Text('Bus $_selectedBusNumber selected.'),
               backgroundColor: AppTheme.greenColor,
-              duration: Duration(seconds: 3),
+              duration: const Duration(seconds: 2),
             ),
           );
         }
@@ -108,6 +104,23 @@ class _TicketScreenState extends State<TicketScreen> {
     _destinationController.dispose();
     _seatCountController.dispose();
     super.dispose();
+  }
+
+  // --- MISSING METHODS RESTORED BELOW ---
+
+  void _initGemini() {
+    try {
+      if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
+        log('WARNING: Using default Gemini API key.');
+      }
+      Gemini.instance;
+    } catch (e) {
+      try {
+        Gemini.init(apiKey: AppConfig.geminiApiKey);
+      } catch (e) {
+        log('Failed to initialize Gemini: $e');
+      }
+    }
   }
 
   void _initSpeech() async {
@@ -165,7 +178,7 @@ class _TicketScreenState extends State<TicketScreen> {
 
   void _startListening() async {
     if (_availableSeats != null && _availableSeats! <= 0) {
-      _showErrorSnackBar('No Available Seats');
+      _showErrorSnackBar(_busFullError ?? 'No Available Seats');
       return;
     }
 
@@ -303,7 +316,7 @@ If not found, use null.
     }
   }
 
-  // Fetch available seats with SAFE parsing
+  // --- Check Status & Fetch Seats ---
   Future<void> _fetchAvailableSeats(String busNumber) async {
     try {
       final busQuery = await _firestore
@@ -317,6 +330,21 @@ If not found, use null.
         final data = doc.data();
         _busDocId = doc.id;
 
+        // 1. Check if Started
+        final bool isStarted = data['isStarted'] ?? false;
+
+        if (!isStarted) {
+          if (mounted) {
+            setState(() {
+              _availableSeats = 0;
+              _busFullError = 'Bus Not Started';
+            });
+            _showErrorSnackBar('This bus route has not started yet.');
+          }
+          return;
+        }
+
+        // 2. Parse Seats
         int seats = 0;
         var available = data['availableSeats'];
         var total = data['totalSeats'];
@@ -355,7 +383,7 @@ If not found, use null.
     }
   }
 
-  // FETCH ONLY STARTED BUSES
+  // Fetch ALL buses
   Future<void> _fetchBusNumbers() async {
     setState(() {
       _isLoading = true;
@@ -369,11 +397,9 @@ If not found, use null.
         return;
       }
 
-      // FIX: Filter query to only show started buses
       final busesSnapshot = await _firestore
           .collection('Buses')
           .where('userId', isEqualTo: userId)
-          .where('isStarted', isEqualTo: true)
           .get();
 
       final buses = busesSnapshot.docs
@@ -389,8 +415,6 @@ If not found, use null.
         setState(() {
           _isLoading = false;
         });
-        // Optional: Handle error silently or show log
-        log("Error fetching buses: $e");
       }
     }
   }
@@ -436,8 +460,48 @@ If not found, use null.
     return seatCount * 100.0;
   }
 
+  Future<bool> _validateDestination() async {
+    try {
+      final busDoc = await _firestore
+          .collection('Buses')
+          .where('busNumber', isEqualTo: _selectedBusNumber)
+          .get();
+
+      if (busDoc.docs.isEmpty) return false;
+
+      final routes = List<String>.from(busDoc.docs.first.data()['route'] ?? []);
+      final destination = _destinationController.text.trim();
+
+      if (routes.contains(destination)) return true;
+
+      final prompt =
+          """I have a bus with the following routes: ${routes.join(', ')}. 
+      Is '$destination' included in or near these routes? Answer only with 'yes' or 'no'.""";
+
+      final response = await _gemini.chat([
+        Content(parts: [Part.text(prompt)], role: 'user')
+      ]);
+
+      if (response != null && response.output != null) {
+        final answer = response.output!.toLowerCase();
+        return answer.contains('yes');
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error validating destination: $e');
+      return true;
+    }
+  }
+
+  bool _canProceedToCheckout() {
+    return _selectedBusNumber != null &&
+        _selectedPickupLocation != null &&
+        _destinationController.text.isNotEmpty &&
+        _seatCountController.text.isNotEmpty &&
+        (int.tryParse(_seatCountController.text) ?? 0) > 0;
+  }
+
   Future<void> _submitTicket() async {
-    // 1. Validate Inputs
     if (_selectedBusNumber == null) {
       _showErrorSnackBar('Please select a bus number');
       return;
@@ -465,7 +529,6 @@ If not found, use null.
       _isLoading = true;
     });
 
-    // 2. Validate Destination
     final isValidDestination = await _validateDestination();
     if (!isValidDestination) {
       _showErrorSnackBar('Destination not on this bus route');
@@ -475,19 +538,16 @@ If not found, use null.
       return;
     }
 
-    // 3. Check Availability (But don't deduct yet)
     final totalPrice = _calculateTotalPrice();
 
-    // Robust check: Ensure seats are available
     if (_availableSeats != null && _availableSeats! < seatCount) {
-      _showErrorSnackBar('Not enough seats. Only $_availableSeats left.');
+      _showErrorSnackBar(_busFullError ?? 'Not enough seats available.');
       setState(() {
         _isLoading = false;
       });
       return;
     }
 
-    // 4. Navigate to Checkout
     if (mounted) {
       final userId = _authService.currentUser?.uid;
       setState(() {
@@ -510,6 +570,226 @@ If not found, use null.
         },
       );
     }
+  }
+
+  // UI Helper Methods
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.redColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.greenColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showInfoSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  Widget _buildBusNumberDropdown() {
+    bool isFromBussesScreen = widget.initialBusNumber != null;
+
+    if (_selectedBusNumber != null &&
+        !_busNumbers.contains(_selectedBusNumber)) {
+      if (isFromBussesScreen && _selectedBusNumber != null) {
+        _busNumbers.add(_selectedBusNumber!);
+      }
+    }
+
+    return DropdownButtonFormField<String>(
+      initialValue: _selectedBusNumber,
+      decoration: InputDecoration(
+        labelText: 'Bus Number',
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        prefixIcon: const Icon(Icons.directions_bus),
+        filled: isFromBussesScreen,
+        fillColor: isFromBussesScreen ? Colors.grey.shade200 : null,
+      ),
+      items: _busNumbers.map((String busNumber) {
+        return DropdownMenuItem<String>(
+          value: busNumber,
+          child: Text(busNumber),
+        );
+      }).toList(),
+      onChanged: isFromBussesScreen
+          ? null
+          : (String? newValue) {
+              setState(() {
+                _selectedBusNumber = newValue;
+                _selectedPickupLocation = null;
+                _pickupLocations = [];
+                _availableSeats = null;
+                _busFullError = null;
+              });
+              if (newValue != null) {
+                _fetchPickupLocations(newValue);
+                _fetchAvailableSeats(newValue);
+              }
+            },
+    );
+  }
+
+  Widget _buildDropdown({
+    required String? value,
+    required List<String> items,
+    required String hint,
+    required void Function(String?)? onChanged,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        AppConfig.fromDropDown = true;
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppTheme.accentColor),
+          borderRadius: BorderRadius.circular(10.0),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: value,
+            hint: Text(
+              hint,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            items: items.map((item) {
+              return DropdownMenuItem<String>(
+                value: item,
+                child: Text(
+                  item,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              );
+            }).toList(),
+            onChanged: onChanged,
+            icon:
+                const Icon(Icons.arrow_drop_down, color: AppTheme.accentColor),
+            isExpanded: true,
+            dropdownColor: AppTheme.primaryColor,
+            menuMaxHeight: MediaQuery.of(context).size.height * 0.4,
+            focusColor: Colors.transparent,
+            elevation: 8,
+            underline: Container(height: 0),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Center _voiceRecognitionButton() {
+    return Center(
+      child: Column(
+        children: [
+          InkWell(
+            onTap: _isProcessing
+                ? null
+                : (_isListening ? _stopListening : _startListening),
+            borderRadius: BorderRadius.circular(50),
+            child: Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                color: _isProcessing
+                    ? AppTheme.greyColor
+                    : _isListening
+                        ? AppTheme.accentColor
+                        : AppTheme.greyColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _isProcessing
+                    ? Icons.hourglass_top
+                    : _isListening
+                        ? Icons.mic
+                        : Icons.mic_none,
+                color: _isProcessing
+                    ? AppTheme.accentColor
+                    : _isListening
+                        ? Colors.white
+                        : AppTheme.accentColor,
+                size: 40,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isProcessing
+                ? "Processing speech with AI..."
+                : _isListening
+                    ? "Listening in Sinhala..."
+                    : "Tap to speak destination & seats",
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.accentColor,
+                  fontWeight: FontWeight.w500,
+                ),
+          ),
+          if (_lastWords.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12.0, bottom: 12.0),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppTheme.lightGreyColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppTheme.accentColor.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Transcribed Sinhala:',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppTheme.accentColor.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _lastWords,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppTheme.accentColor,
+                            fontStyle: _isListening
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -703,288 +983,6 @@ If not found, use null.
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Center _voiceRecognitionButton() {
-    return Center(
-      child: Column(
-        children: [
-          InkWell(
-            onTap: _isProcessing
-                ? null
-                : (_isListening ? _stopListening : _startListening),
-            borderRadius: BorderRadius.circular(50),
-            child: Container(
-              padding: const EdgeInsets.all(15),
-              decoration: BoxDecoration(
-                color: _isProcessing
-                    ? AppTheme.greyColor
-                    : _isListening
-                        ? AppTheme.accentColor
-                        : AppTheme.greyColor,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.1),
-                    blurRadius: 10,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: Icon(
-                _isProcessing
-                    ? Icons.hourglass_top
-                    : _isListening
-                        ? Icons.mic
-                        : Icons.mic_none,
-                color: _isProcessing
-                    ? AppTheme.accentColor
-                    : _isListening
-                        ? Colors.white
-                        : AppTheme.accentColor,
-                size: 40,
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            _isProcessing
-                ? "Processing speech with AI..."
-                : _isListening
-                    ? "Listening in Sinhala..."
-                    : "Tap to speak destination & seats",
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppTheme.accentColor,
-                  fontWeight: FontWeight.w500,
-                ),
-          ),
-          if (_lastWords.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 12.0, bottom: 12.0),
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: AppTheme.lightGreyColor,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: AppTheme.accentColor.withValues(alpha: 0.3)),
-                ),
-                child: Column(
-                  children: [
-                    Text(
-                      'Transcribed Sinhala:',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: AppTheme.accentColor.withValues(alpha: 0.7),
-                            fontWeight: FontWeight.bold,
-                          ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _lastWords,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                            color: AppTheme.accentColor,
-                            fontStyle: _isListening
-                                ? FontStyle.italic
-                                : FontStyle.normal,
-                          ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBusNumberDropdown() {
-    bool isFromBussesScreen = widget.initialBusNumber != null;
-
-    if (_selectedBusNumber != null &&
-        !_busNumbers.contains(_selectedBusNumber)) {
-      if (isFromBussesScreen && _selectedBusNumber != null) {
-        _busNumbers.add(_selectedBusNumber!);
-      }
-    }
-
-    return DropdownButtonFormField<String>(
-      initialValue: _selectedBusNumber,
-      decoration: InputDecoration(
-        labelText: 'Bus Number',
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(10),
-        ),
-        prefixIcon: const Icon(Icons.directions_bus),
-        filled: isFromBussesScreen,
-        fillColor: isFromBussesScreen ? Colors.grey.shade200 : null,
-      ),
-      items: _busNumbers.map((String busNumber) {
-        return DropdownMenuItem<String>(
-          value: busNumber,
-          child: Text(busNumber),
-        );
-      }).toList(),
-      onChanged: isFromBussesScreen
-          ? null
-          : (String? newValue) {
-              setState(() {
-                _selectedBusNumber = newValue;
-                _selectedPickupLocation = null;
-                _pickupLocations = [];
-                _availableSeats = null;
-                _busFullError = null;
-              });
-              if (newValue != null) {
-                _fetchPickupLocations(newValue);
-                _fetchAvailableSeats(newValue);
-              }
-            },
-    );
-  }
-
-  Widget _buildDropdown({
-    required String? value,
-    required List<String> items,
-    required String hint,
-    required void Function(String?)? onChanged,
-  }) {
-    return GestureDetector(
-      onTap: () {
-        AppConfig.fromDropDown = true;
-      },
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 12.0),
-        decoration: BoxDecoration(
-          border: Border.all(color: AppTheme.accentColor),
-          borderRadius: BorderRadius.circular(10.0),
-        ),
-        child: DropdownButtonHideUnderline(
-          child: DropdownButton<String>(
-            value: value,
-            hint: Text(
-              hint,
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            items: items.map((item) {
-              return DropdownMenuItem<String>(
-                value: item,
-                child: Text(
-                  item,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-              );
-            }).toList(),
-            onChanged: onChanged,
-            icon:
-                const Icon(Icons.arrow_drop_down, color: AppTheme.accentColor),
-            isExpanded: true,
-            dropdownColor: AppTheme.primaryColor,
-            menuMaxHeight: MediaQuery.of(context).size.height * 0.4,
-            focusColor: Colors.transparent,
-            elevation: 8,
-            underline: Container(height: 0),
-          ),
-        ),
-      ),
-    );
-  }
-
-  bool _canProceedToCheckout() {
-    return _selectedBusNumber != null &&
-        _selectedPickupLocation != null &&
-        _destinationController.text.isNotEmpty &&
-        _seatCountController.text.isNotEmpty &&
-        (int.tryParse(_seatCountController.text) ?? 0) > 0;
-  }
-
-  void _initGemini() {
-    try {
-      if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
-        log('WARNING: Using default Gemini API key. Replace with your actual key in config.dart');
-      }
-
-      Gemini.instance;
-      log('Gemini initialized successfully in TicketScreen');
-    } catch (e) {
-      log('Error initializing Gemini: $e');
-
-      try {
-        Gemini.init(apiKey: AppConfig.geminiApiKey);
-        log('Gemini initialized in TicketScreen');
-      } catch (e) {
-        log('Failed to initialize Gemini: $e');
-      }
-    }
-  }
-
-  void _showSuccessSnackBar(String message) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppTheme.greenColor,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  void _showInfoSnackBar(String message) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        duration: const Duration(seconds: 1),
-      ),
-    );
-  }
-
-  Future<bool> _validateDestination() async {
-    try {
-      final busDoc = await _firestore
-          .collection('Buses')
-          .where('busNumber', isEqualTo: _selectedBusNumber)
-          .get();
-
-      if (busDoc.docs.isEmpty) return false;
-
-      final routes = List<String>.from(busDoc.docs.first.data()['route'] ?? []);
-      final destination = _destinationController.text.trim();
-
-      if (routes.contains(destination)) return true;
-
-      final prompt =
-          """I have a bus with the following routes: ${routes.join(', ')}. 
-      Is '$destination' included in or near these routes? Answer only with 'yes' or 'no'.""";
-
-      final response = await _gemini.chat([
-        Content(parts: [Part.text(prompt)], role: 'user')
-      ]);
-
-      if (response != null && response.output != null) {
-        final answer = response.output!.toLowerCase();
-        return answer.contains('yes');
-      }
-      return false;
-    } catch (e) {
-      debugPrint('Error validating destination: $e');
-      return true;
-    }
-  }
-
-  void _showErrorSnackBar(String message) {
-    ScaffoldMessenger.of(context).clearSnackBars();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: AppTheme.redColor,
-        duration: const Duration(seconds: 2),
       ),
     );
   }
