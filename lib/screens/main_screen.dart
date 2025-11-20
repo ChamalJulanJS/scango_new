@@ -6,8 +6,6 @@ import 'ticket_screen.dart';
 import 'history_screen.dart';
 import 'profile_screen.dart';
 import '../widgets/common_widgets.dart';
-import '../services/data_service.dart';
-import '../theme/app_theme.dart';
 
 class MainScreen extends StatefulWidget {
   final int initialTab;
@@ -35,10 +33,7 @@ class _MainScreenState extends State<MainScreen> {
   String? _busNumber;
   String? _pickupLocation;
 
-  final Set<int> _pinProtectedTabs = {
-    1,
-    3
-  }; // Profile (4) removed from PIN protection
+  final Set<int> _pinProtectedTabs = {1, 3};
 
   bool _initialPinCheckDone = false;
   bool _isTabSwitching = false;
@@ -51,35 +46,8 @@ class _MainScreenState extends State<MainScreen> {
     _pickupLocation = widget.pickupLocation;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_currentIndex == 2 && _busNumber == null) {
-        _validateTicketAccess();
-      } else {
-        _checkInitialTabProtection();
-      }
-    });
-  }
-
-  Future<void> _validateTicketAccess() async {
-    final activeBus = await DataService().getActiveBus();
-
-    if (!mounted) return;
-
-    if (activeBus == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please start a bus route first to issue tickets.'),
-          backgroundColor: AppTheme.redColor,
-          duration: Duration(seconds: 3),
-        ),
-      );
-      _navigateToTab(1);
-    } else {
-      final data = activeBus.data() as Map<String, dynamic>;
-      setState(() {
-        _busNumber = data['busNumber'];
-      });
       _checkInitialTabProtection();
-    }
+    });
   }
 
   void _checkInitialTabProtection() {
@@ -213,31 +181,6 @@ class _MainScreenState extends State<MainScreen> {
         onTap: (index) async {
           if (index == _currentIndex || _isTabSwitching) return;
 
-          if (index == 2) {
-            final activeBus = await DataService().getActiveBus();
-
-            // FIX: Check context.mounted to satisfy linter
-            if (!context.mounted) return;
-
-            if (activeBus == null) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content:
-                      Text('Please start a bus route first to issue tickets.'),
-                  backgroundColor: AppTheme.redColor,
-                ),
-              );
-              _navigateToTab(1);
-              return;
-            } else {
-              final data = activeBus.data() as Map<String, dynamic>;
-              setState(() {
-                _busNumber = data['busNumber'];
-              });
-            }
-          }
-
-          // Check again before navigation
           if (context.mounted) {
             _navigateToTab(index);
           }

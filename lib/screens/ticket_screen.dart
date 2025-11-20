@@ -64,7 +64,7 @@ class _TicketScreenState extends State<TicketScreen> {
 
     _fetchBusNumbers();
     _initSpeech();
-    _initGemini(); // Fixed: Method is now defined below
+    _initGemini();
 
     if (_selectedBusNumber != null && _pickupLocations.isEmpty) {
       _fetchPickupLocations(_selectedBusNumber!);
@@ -105,8 +105,6 @@ class _TicketScreenState extends State<TicketScreen> {
     _seatCountController.dispose();
     super.dispose();
   }
-
-  // --- MISSING METHODS RESTORED BELOW ---
 
   void _initGemini() {
     try {
@@ -316,7 +314,7 @@ If not found, use null.
     }
   }
 
-  // --- Check Status & Fetch Seats ---
+  // --- FETCH BUS DETAILS & CHECK STATUS ON SELECTION ---
   Future<void> _fetchAvailableSeats(String busNumber) async {
     try {
       final busQuery = await _firestore
@@ -330,10 +328,11 @@ If not found, use null.
         final data = doc.data();
         _busDocId = doc.id;
 
-        // 1. Check if Started
+        // 1. Check if the bus has started
         final bool isStarted = data['isStarted'] ?? false;
 
         if (!isStarted) {
+          // If user selected an inactive bus, show error NOW
           if (mounted) {
             setState(() {
               _availableSeats = 0;
@@ -344,7 +343,7 @@ If not found, use null.
           return;
         }
 
-        // 2. Parse Seats
+        // 2. Parse Seats Safely
         int seats = 0;
         var available = data['availableSeats'];
         var total = data['totalSeats'];
@@ -383,7 +382,7 @@ If not found, use null.
     }
   }
 
-  // Fetch ALL buses
+  // --- FIXED: FETCH ALL BUSES (Do not filter here) ---
   Future<void> _fetchBusNumbers() async {
     setState(() {
       _isLoading = true;
@@ -397,6 +396,7 @@ If not found, use null.
         return;
       }
 
+      // Fetch ALL buses, so the user can see them in the list
       final busesSnapshot = await _firestore
           .collection('Buses')
           .where('userId', isEqualTo: userId)
@@ -528,6 +528,15 @@ If not found, use null.
     setState(() {
       _isLoading = true;
     });
+
+    // Status Check BEFORE proceeding
+    if (_busFullError == 'Bus Not Started') {
+      _showErrorSnackBar('This bus route has not started yet.');
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
 
     final isValidDestination = await _validateDestination();
     if (!isValidDestination) {
