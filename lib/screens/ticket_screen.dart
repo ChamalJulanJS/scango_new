@@ -27,7 +27,8 @@ class TicketScreen extends StatefulWidget {
 }
 
 class _TicketScreenState extends State<TicketScreen> {
-  bool _autoProcess = false;
+  // REMOVED: bool _autoProcess = false; (This was causing the warning)
+
   final AuthService _authService = AuthService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   // Speech to text
@@ -50,9 +51,9 @@ class _TicketScreenState extends State<TicketScreen> {
   List<String> _busNumbers = [];
   List<String> _pickupLocations = [];
   bool _isLoading = true;
-  int? _availableSeats; // Add this to store available seats
-  String? _busDocId; // Store the Firestore doc ID for the selected bus
-  String? _busFullError; // For UI error message
+  int? _availableSeats;
+  String? _busDocId;
+  String? _busFullError;
 
   @override
   void initState() {
@@ -62,10 +63,6 @@ class _TicketScreenState extends State<TicketScreen> {
     _selectedBusNumber = widget.initialBusNumber;
     _selectedPickupLocation = widget.initialPickupLocation;
 
-    // Debug print to verify values
-    debugPrint(
-        'DEBUG: TicketScreen initialized with busNumber: $_selectedBusNumber, pickupLocation: $_selectedPickupLocation');
-
     // Fetch bus numbers from Firebase
     _fetchBusNumbers();
 
@@ -73,20 +70,19 @@ class _TicketScreenState extends State<TicketScreen> {
     _initSpeech();
     _initGemini();
 
-    // If initial bus number is provided but pickup locations aren't loaded yet, fetch them
+    // If initial bus number is provided, load its data
     if (_selectedBusNumber != null && _pickupLocations.isEmpty) {
       _fetchPickupLocations(_selectedBusNumber!);
       _fetchAvailableSeats(_selectedBusNumber!);
     }
 
-    // If we came from the Busses screen with a started bus, show a message
     if (_selectedBusNumber != null) {
       Future.delayed(Duration(milliseconds: 500), () {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                  'Bus $_selectedBusNumber started. Ready to issue tickets.'),
+                  'Bus $_selectedBusNumber selected. Enter details to book.'),
               backgroundColor: AppTheme.greenColor,
               duration: Duration(seconds: 3),
             ),
@@ -99,9 +95,6 @@ class _TicketScreenState extends State<TicketScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-
-    // If we have initialPickupLocation but pickup locations are already loaded,
-    // check if we can select the initialPickupLocation
     if (widget.initialPickupLocation != null &&
         _pickupLocations.isNotEmpty &&
         _pickupLocations.contains(widget.initialPickupLocation) &&
@@ -109,9 +102,6 @@ class _TicketScreenState extends State<TicketScreen> {
       setState(() {
         _selectedPickupLocation = widget.initialPickupLocation;
       });
-
-      debugPrint(
-          'DEBUG: didChangeDependencies updated pickup location to: $_selectedPickupLocation');
     }
   }
 
@@ -122,7 +112,6 @@ class _TicketScreenState extends State<TicketScreen> {
     super.dispose();
   }
 
-  // Initialize speech recognition
   void _initSpeech() async {
     _speechEnabled = await _speech.initialize(
       onError: (error) {
@@ -133,20 +122,16 @@ class _TicketScreenState extends State<TicketScreen> {
       },
       onStatus: (status) {
         log('Speech status: $status');
-        // Update UI based on status
         if (status == 'done' || status == 'notListening') {
           setState(() {
             _isListening = false;
           });
 
-          // Only set processing state if we're not already processing (for Gemini)
-          // This prevents overriding the Gemini processing state
           if (!_isProcessing) {
             setState(() {
               _isProcessing = true;
             });
 
-            // Show processing state briefly, then reset
             Future.delayed(const Duration(milliseconds: 1500), () {
               if (mounted) {
                 setState(() {
@@ -159,12 +144,9 @@ class _TicketScreenState extends State<TicketScreen> {
       },
     );
     setState(() {});
-
-    // Check if Sinhala is available
     _checkLanguageAvailability();
   }
 
-  // Check if Sinhala language is available
   void _checkLanguageAvailability() async {
     try {
       final languages = await _speech.locales();
@@ -176,25 +158,18 @@ class _TicketScreenState extends State<TicketScreen> {
           .toList();
 
       if (sinhalaLocale.isNotEmpty) {
-        log('Sinhala language found: ${sinhalaLocale.map((e) => e.localeId).join(', ')}');
-      } else {
-        log('Sinhala language not found in available languages');
-        log('Available languages: ${languages.map((e) => e.localeId).join(', ')}');
+        log('Sinhala language found');
       }
     } catch (e) {
       log('Error checking language availability: $e');
     }
   }
 
-  // Start listening to speech
   void _startListening() async {
-    // --- ADD THIS BLOCK ---
-    // If we know the seat count and it is 0 (or less), stop here.
     if (_availableSeats != null && _availableSeats! <= 0) {
       _showErrorSnackBar('No Available Seats');
-      return; // This 'return' stops the rest of the function from running
+      return;
     }
-    // ----------------------
 
     if (!_speechEnabled) {
       log('Speech recognition not available');
@@ -213,16 +188,13 @@ class _TicketScreenState extends State<TicketScreen> {
     });
   }
 
-  // Stop listening to speech
   void _stopListening() async {
     try {
       await _speech.stop();
-      // Inform the user that listening has stopped
       _showInfoSnackBar('Speech recognition stopped');
     } catch (e) {
       log('Error stopping speech recognition: $e');
     } finally {
-      // Ensure the state is updated regardless of whether the stop call succeeded
       if (mounted) {
         setState(() {
           _isListening = false;
@@ -231,25 +203,17 @@ class _TicketScreenState extends State<TicketScreen> {
     }
   }
 
-  // Handle speech recognition results
   void _onSpeechResult(SpeechRecognitionResult result) {
     setState(() {
       _lastWords = result.recognizedWords;
     });
 
-    // Log the transcribed text
-    log('Transcribed text: ${result.recognizedWords}');
-
-    // If the speech result is final, process it with Gemini
     if (result.finalResult && result.recognizedWords.isNotEmpty) {
-      log('FINAL result: ${result.recognizedWords}');
       _processSinhalaTextWithGemini(result.recognizedWords);
     }
   }
 
-  // Process Sinhala text with Gemini
   Future<void> _processSinhalaTextWithGemini(String sinhalaText) async {
-    // Make sure speech recognition is stopped
     if (_isListening) {
       _stopListening();
     }
@@ -258,22 +222,15 @@ class _TicketScreenState extends State<TicketScreen> {
       _isProcessing = true;
     });
 
-    // Show a processing message to the user
     _showInfoSnackBar('Processing your speech...');
 
     try {
-      // Simplified prompt that works better with Gemini API
       final String systemPrompt = """
 Extract the city name and number of seats from this Sinhala text.
 Return as JSON with "city" in English and "seats" as a number.
 If not found, use null.
-Examples:
-"මට කොළඹට යන්න ඕනෙ, ආසන තුනක් වෙන් කරන්න" → {"city": "Colombo", "seats": 3}
-"ගාල්ලට ආසන දෙකක් වෙන් කරන්න" → {"city": "Galle", "seats": 2}
-"මහනුවර" → {"city": "Kandy", "seats": null}
 """;
 
-      // First try a text-only approach which is more reliable for Gemini
       try {
         final prompt = "$systemPrompt\nText: $sinhalaText\nJSON:";
         final response = await _gemini.chat([
@@ -281,53 +238,17 @@ Examples:
         ]);
 
         if (response != null && response.output != null) {
-          log('Gemini text response: ${response.output}');
-
           final jsonResponse = _extractJsonFromResponse(response.output!);
           if (jsonResponse != null) {
             _updateFieldsFromGeminiResponse(jsonResponse);
             _showSuccessSnackBar('Information extracted successfully!');
-            return; // Success with text method
+            return;
           }
         }
       } catch (e) {
-        log('Text method failed, trying chat method: $e');
-      }
-
-      // If text method fails, try chat method as fallback
-      final content = [
-        Content(
-          parts: [Part.text(systemPrompt)],
-          role: 'user',
-        ),
-        Content(
-          parts: [Part.text("Text: $sinhalaText\nJSON:")],
-          role: 'model',
-        ),
-      ];
-
-      // Call Gemini API
-      final response = await _gemini.chat(content);
-
-      if (response != null && response.output != null) {
-        log('Gemini chat response: ${response.output}');
-
-        try {
-          final jsonResponse = _extractJsonFromResponse(response.output!);
-          if (jsonResponse != null) {
-            _updateFieldsFromGeminiResponse(jsonResponse);
-            _showSuccessSnackBar('Information extracted successfully!');
-          } else {
-            log('Failed to extract JSON from Gemini response');
-            _showErrorSnackBar('Could not extract information from speech');
-          }
-        } catch (e) {
-          log('Error parsing Gemini response: $e');
-          _showErrorSnackBar('Error parsing response: $e');
-        }
+        log('Text method failed: $e');
       }
     } catch (e) {
-      log('Error processing with Gemini: $e');
       _showErrorSnackBar('Error processing with AI: $e');
     } finally {
       if (mounted) {
@@ -339,17 +260,12 @@ Examples:
     }
   }
 
-  // Extract JSON from Gemini's text response
   Map<String, dynamic>? _extractJsonFromResponse(String response) {
     try {
-      // First try to directly parse the entire response as JSON
       try {
         return json.decode(response) as Map<String, dynamic>;
-      } catch (_) {
-        // If that fails, try to extract JSON using regex
-      }
+      } catch (_) {}
 
-      // Look for JSON pattern in the response using regex
       final RegExp jsonRegExp = RegExp(r'{[\s\S]*}');
       final Match? match = jsonRegExp.firstMatch(response);
 
@@ -357,79 +273,29 @@ Examples:
         final String jsonString = match.group(0)!;
         return json.decode(jsonString) as Map<String, dynamic>;
       }
-
-      // If no JSON pattern found with regex, look for key-value pattern
-      if (response.contains('"city"') && response.contains('"seats"')) {
-        // Try to construct a valid JSON from the response
-        String cleanedResponse =
-            response.replaceAll(RegExp(r'\s+'), ' ').trim();
-        // Create a simple JSON structure
-        if (!cleanedResponse.startsWith('{')) {
-          cleanedResponse = '{$cleanedResponse';
-        }
-        if (!cleanedResponse.endsWith('}')) {
-          cleanedResponse = '$cleanedResponse}';
-        }
-
-        return json.decode(cleanedResponse) as Map<String, dynamic>;
-      }
-
-      // Last resort: extract values manually
-      final RegExp cityRegExp = RegExp(r'"city"\s*:\s*"([^"]+)"');
-      final RegExp seatsRegExp = RegExp(r'"seats"\s*:\s*(\d+|null)');
-
-      final cityMatch = cityRegExp.firstMatch(response);
-      final seatsMatch = seatsRegExp.firstMatch(response);
-
-      if (cityMatch != null || seatsMatch != null) {
-        final result = <String, dynamic>{};
-        if (cityMatch != null) {
-          result['city'] = cityMatch.group(1);
-        }
-        if (seatsMatch != null) {
-          final seatsValue = seatsMatch.group(1);
-          result['seats'] =
-              seatsValue == 'null' ? null : int.parse(seatsValue!);
-        }
-        return result;
-      }
-
-      log('Could not extract JSON from: $response');
       return null;
     } catch (e) {
-      log('JSON extraction error: $e');
       return null;
     }
   }
 
-  // Update form fields from Gemini response
   void _updateFieldsFromGeminiResponse(Map<String, dynamic> jsonResponse) {
     if (mounted) {
       setState(() {
-        // Update destination field if city is available
         if (jsonResponse.containsKey('city') && jsonResponse['city'] != null) {
           _destinationController.text = jsonResponse['city'].toString();
         }
-
-        // Update seat count field if seats is available
         if (jsonResponse.containsKey('seats') &&
             jsonResponse['seats'] != null) {
           _seatCountController.text = jsonResponse['seats'].toString();
         }
-
-        // Ensure both listening and processing states are turned off
         _isListening = false;
         _isProcessing = false;
       });
 
-      // Check if both destination and seat count are filled via voice input
-      // If so, automatically proceed to checkout
       if (_destinationController.text.isNotEmpty &&
           _seatCountController.text.isNotEmpty &&
-          jsonResponse.containsKey('city') &&
-          jsonResponse.containsKey('seats') &&
           _canProceedToCheckout()) {
-        // Allow UI to update first
         Future.delayed(const Duration(milliseconds: 500), () {
           if (mounted) {
             _submitTicket();
@@ -439,132 +305,122 @@ Examples:
     }
   }
 
-  // Fetch bus numbers from Firebase Buses collection (only for current user)
-  Future<void> _fetchBusNumbers() async {
-    setState(() {
-      _isLoading = true;
-    });
-
-    try {
-      // Get current user ID
-      final userId = _authService.currentUser?.uid;
-      if (userId == null) {
-        _showErrorSnackBar('User not authenticated');
-        setState(() {
-          _isLoading = false;
-        });
-        return;
-      }
-
-      // Query buses where userId matches current user
-      final busesSnapshot = await _firestore
-          .collection('Buses')
-          .where('userId', isEqualTo: userId)
-          .get();
-
-      final buses = busesSnapshot.docs.map((doc) {
-        return doc.data()['busNumber'] as String;
-      }).toList();
-
-      setState(() {
-        _busNumbers = buses;
-        _isLoading = false;
-        // No snackbar message here - even if no buses are found
-      });
-    } catch (e) {
-      if (mounted) {
-        _showErrorSnackBar('Failed to load bus numbers: ${e.toString()}');
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    }
-  }
-
-  // Fetch pickup locations (routes) for the selected bus
-  Future<void> _fetchPickupLocations(String busNumber) async {
-    setState(() {
-      _isLoading = true;
-      // Don't reset the pickup locations and selected pickup location here
-      // to preserve the initial values when returning from checkout
-      _pickupLocations = [];
-      // Only reset selected pickup location if it doesn't match the initialPickupLocation
-      if (widget.initialPickupLocation != _selectedPickupLocation) {
-        _selectedPickupLocation = null;
-      }
-    });
-
-    try {
-      final busDoc = await _firestore
-          .collection('Buses')
-          .where('busNumber', isEqualTo: busNumber)
-          .get();
-
-      if (busDoc.docs.isNotEmpty) {
-        final routes =
-            List<String>.from(busDoc.docs.first.data()['route'] ?? []);
-
-        setState(() {
-          _pickupLocations = routes;
-          _isLoading = false;
-
-          // If we have an initialPickupLocation from the widget, try to select it
-          if (widget.initialPickupLocation != null &&
-              _pickupLocations.contains(widget.initialPickupLocation)) {
-            _selectedPickupLocation = widget.initialPickupLocation;
-          }
-
-          // Debug print to verify pickup locations and selected value
-          debugPrint('DEBUG: Pickup locations loaded: $_pickupLocations');
-          debugPrint(
-              'DEBUG: Selected pickup location: $_selectedPickupLocation');
-        });
-      } else {
-        _showErrorSnackBar('Bus routes not found');
-        setState(() {
-          _isLoading = false;
-        });
-      }
-    } catch (e) {
-      _showErrorSnackBar('Failed to load pickup locations: ${e.toString()}');
-      setState(() {
-        _isLoading = false;
-      });
-    }
-  }
-
-  // Fetch available seats for the selected bus
+  // Fetch available seats with SAFE parsing
   Future<void> _fetchAvailableSeats(String busNumber) async {
-    setState(() {
-      _availableSeats = null;
-      _busFullError = null;
-    });
     try {
       final busQuery = await _firestore
           .collection('Buses')
           .where('busNumber', isEqualTo: busNumber)
           .limit(1)
           .get();
+
       if (busQuery.docs.isNotEmpty) {
         final doc = busQuery.docs.first;
         final data = doc.data();
         _busDocId = doc.id;
+
+        int seats = 0;
+        var available = data['availableSeats'];
+        var total = data['totalSeats'];
+
+        if (available is int) {
+          seats = available;
+        } else if (available is String) {
+          seats = int.tryParse(available) ?? 0;
+        } else if (total is int) {
+          seats = total;
+        } else if (total is String) {
+          seats = int.tryParse(total) ?? 0;
+        }
+
+        if (mounted) {
+          setState(() {
+            _availableSeats = seats;
+            _busFullError = (_availableSeats == 0) ? 'Bus is full' : null;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _availableSeats = 0;
+            _busFullError = 'Bus not found';
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
         setState(() {
-          _availableSeats = data['availableSeats'] ?? data['totalSeats'] ?? 0;
-          if (_availableSeats == 0) {
-            _busFullError = 'Bus is full';
+          _availableSeats = 0;
+          _busFullError = 'Error loading bus info';
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchBusNumbers() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final userId = _authService.currentUser?.uid;
+      if (userId == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+      final busesSnapshot = await _firestore
+          .collection('Buses')
+          .where('userId', isEqualTo: userId)
+          .get();
+      final buses = busesSnapshot.docs
+          .map((doc) => doc.data()['busNumber'] as String)
+          .toList();
+      setState(() {
+        _busNumbers = buses;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchPickupLocations(String busNumber) async {
+    setState(() {
+      _isLoading = true;
+      _pickupLocations = [];
+      if (widget.initialPickupLocation != _selectedPickupLocation) {
+        _selectedPickupLocation = null;
+      }
+    });
+    try {
+      final busDoc = await _firestore
+          .collection('Buses')
+          .where('busNumber', isEqualTo: busNumber)
+          .get();
+      if (busDoc.docs.isNotEmpty) {
+        final routes =
+            List<String>.from(busDoc.docs.first.data()['route'] ?? []);
+        setState(() {
+          _pickupLocations = routes;
+          _isLoading = false;
+          if (widget.initialPickupLocation != null &&
+              _pickupLocations.contains(widget.initialPickupLocation)) {
+            _selectedPickupLocation = widget.initialPickupLocation;
           }
         });
       } else {
         setState(() {
-          _availableSeats = 0;
-          _busFullError = 'Bus not found';
+          _isLoading = false;
         });
       }
     } catch (e) {
       setState(() {
-        _availableSeats = 0;
-        _busFullError = 'Error loading bus info';
+        _isLoading = false;
       });
     }
   }
@@ -613,30 +469,21 @@ Examples:
       return;
     }
 
-    // 3. Check Availability (BUT DO NOT DEDUCT YET)
+    // 3. Check Availability (But don't deduct yet)
     final totalPrice = _calculateTotalPrice();
 
-    // --- THIS IS THE CRITICAL FIX FOR NEGATIVE SEATS ---
+    // Robust check: Ensure seats are available
     if (_availableSeats != null && _availableSeats! < seatCount) {
-      if (_availableSeats == 0) {
-        _showErrorSnackBar('Bus is full. No seats available.');
-      } else {
-        _showErrorSnackBar(
-            'Only $_availableSeats seats available. You requested $seatCount.');
-      }
-      // Stop the loading spinner
+      _showErrorSnackBar('Not enough seats. Only $_availableSeats left.');
       setState(() {
         _isLoading = false;
       });
-      // STOP the function here so it never goes to checkout
       return;
     }
-    // ---------------------------------------------------
 
-    // 4. Navigate to Checkout (Pass data for the next screen to use)
+    // 4. Navigate to Checkout
     if (mounted) {
       final userId = _authService.currentUser?.uid;
-
       setState(() {
         _isLoading = false;
       });
@@ -650,9 +497,8 @@ Examples:
           'destination': _destinationController.text.trim(),
           'seatCount': _seatCountController.text,
           'totalPrice': totalPrice,
-          'autoProcess': _autoProcess,
-
-          // Pass these IDs so the next screen can update the DB
+          'autoProcess':
+              true, // Enable auto-flow for next screens (Used in checkout logic)
           'busDocId': _busDocId,
           'userId': userId,
           'currentAvailableSeats': _availableSeats,
@@ -663,7 +509,8 @@ Examples:
 
   @override
   Widget build(BuildContext context) {
-    _autoProcess = widget.initialBusNumber != null;
+    // REMOVED: _autoProcess = widget.initialBusNumber != null;
+
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -682,7 +529,6 @@ Examples:
                           const SizedBox(height: 30),
                           _voiceRecognitionButton(),
                           const SizedBox(height: 20),
-                          // Bus Number Dropdown
                           Text(
                             'Bus Number',
                             style: Theme.of(context).textTheme.titleLarge,
@@ -721,8 +567,6 @@ Examples:
                               ),
                             ),
                           const SizedBox(height: 20),
-
-                          // Pickup Location Dropdown
                           Text(
                             'Pickup Location',
                             style: Theme.of(context).textTheme.titleLarge,
@@ -745,8 +589,6 @@ Examples:
                                   },
                           ),
                           const SizedBox(height: 20),
-
-                          // Destination TextField (changed from dropdown)
                           Text(
                             'Destination',
                             style: Theme.of(context).textTheme.titleLarge,
@@ -769,8 +611,6 @@ Examples:
                             ),
                           ),
                           const SizedBox(height: 20),
-
-                          // Seat Count TextField (changed from dropdown, numeric only)
                           Text(
                             'Seat Count',
                             style: Theme.of(context).textTheme.titleLarge,
@@ -796,29 +636,22 @@ Examples:
                               ),
                             ),
                             onChanged: (value) {
-                              // Trigger rebuild to update total price
                               setState(() {});
                             },
                           ),
                           const SizedBox(height: 30),
-
-                          // Total Price Display
                           if (_seatCountController.text.isNotEmpty)
                             CustomButton(
                               width: MediaQuery.sizeOf(context).width,
                               text:
                                   'Pay Total ${_calculateTotalPrice().toStringAsFixed(0)}',
-                              onPressed: () =>
-                                  !_autoProcess ? _submitTicket() : null,
+                              onPressed: _submitTicket,
                             ),
-
                           const SizedBox(height: 20),
                         ],
                       ),
                     ),
                   ),
-
-                  // Loading overlay
                   if (_isLoading)
                     Container(
                       color: Colors.black.withValues(alpha: 0.3),
@@ -871,6 +704,7 @@ Examples:
     );
   }
 
+  // Helper methods for Voice Button, Dropdowns, Gemini, etc.
   Center _voiceRecognitionButton() {
     return Center(
       child: Column(
@@ -1069,17 +903,12 @@ Examples:
   void _initGemini() {
     try {
       if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
-        log('WARNING: Using default Gemini API key. Replace with your actual key in config.dart');
+        log('WARNING: Using default Gemini API key.');
       }
-
       Gemini.instance;
-      log('Gemini initialized successfully in TicketScreen');
     } catch (e) {
-      log('Error initializing Gemini: $e');
-
       try {
         Gemini.init(apiKey: AppConfig.geminiApiKey);
-        log('Gemini initialized in TicketScreen');
       } catch (e) {
         log('Failed to initialize Gemini: $e');
       }
@@ -1088,7 +917,6 @@ Examples:
 
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).clearSnackBars();
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -1100,7 +928,6 @@ Examples:
 
   void _showInfoSnackBar(String message) {
     ScaffoldMessenger.of(context).clearSnackBars();
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -1111,7 +938,6 @@ Examples:
 
   Future<bool> _validateDestination() async {
     try {
-      // Get the routes for the selected bus
       final busDoc = await _firestore
           .collection('Buses')
           .where('busNumber', isEqualTo: _selectedBusNumber)
@@ -1122,10 +948,8 @@ Examples:
       final routes = List<String>.from(busDoc.docs.first.data()['route'] ?? []);
       final destination = _destinationController.text.trim();
 
-      // First check if the destination exactly matches any route
       if (routes.contains(destination)) return true;
 
-      // If not an exact match, use Gemini to check if the destination is included
       final prompt =
           """I have a bus with the following routes: ${routes.join(', ')}. 
       Is '$destination' included in or near these routes? Answer only with 'yes' or 'no'.""";
@@ -1138,19 +962,15 @@ Examples:
         final answer = response.output!.toLowerCase();
         return answer.contains('yes');
       }
-
       return false;
     } catch (e) {
       debugPrint('Error validating destination: $e');
-      return true; // Allow the ticket if validation fails
+      return true;
     }
   }
 
-  // Shows error as SnackBar without updating _errorMessage state
   void _showErrorSnackBar(String message) {
-    // Clear any existing SnackBars
     ScaffoldMessenger.of(context).clearSnackBars();
-
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),

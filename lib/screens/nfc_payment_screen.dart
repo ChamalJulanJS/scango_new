@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:nfc_manager/nfc_manager.dart';
 import '../utils/constants.dart';
@@ -12,11 +13,14 @@ class NFCPaymentScreen extends StatefulWidget {
 }
 
 class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
-  int _currentIndex = 2;
   bool _isNFCListening = false;
   bool _isPaymentProcessing = false;
   bool _isPaymentComplete = false;
+
+  // Flags to handle device capabilities
+  bool _nfcAvailable = true;
   bool _isNFCReady = false;
+
   Map<String, dynamic> _ticketDetails = {};
   String _nfcStatus = 'Checking NFC availability...';
 
@@ -43,7 +47,7 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
 
   Future<void> _initNFC() async {
     await _checkNFCStatus();
-    if (_isNFCReady) {
+    if (_nfcAvailable && _isNFCReady) {
       _startNFCListening();
     }
   }
@@ -52,47 +56,30 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
     try {
       bool isAvailable = await NfcManager.instance.isAvailable();
 
-      if (!isAvailable) {
-        setState(() {
-          _isNFCReady = false;
-          _nfcStatus = 'NFC not enabled or not supported on this device';
-        });
-        return;
-      }
+      if (!mounted) return;
 
-      try {
-        await NfcManager.instance.startSession(
-          onDiscovered: (NfcTag tag) async {
-            await NfcManager.instance.stopSession();
-          },
-        );
-        await NfcManager.instance.stopSession();
-
-        setState(() {
+      setState(() {
+        _nfcAvailable = isAvailable;
+        if (isAvailable) {
           _isNFCReady = true;
           _nfcStatus = 'NFC is ready. Tap your credit card to pay';
-        });
-      } catch (e) {
-        setState(() {
+        } else {
           _isNFCReady = false;
-          _nfcStatus = 'NFC not enabled or not supported on this device';
-        });
-      }
+          _nfcStatus = 'NFC not supported on this device.';
+        }
+      });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
+        _nfcAvailable = false;
         _isNFCReady = false;
-        _nfcStatus = 'NFC not enabled or not supported on this device';
+        _nfcStatus = 'NFC Error. Please use manual confirmation.';
       });
     }
   }
 
   Future<void> _startNFCListening() async {
-    if (!_isNFCReady) {
-      setState(() {
-        _nfcStatus = 'NFC not enabled or not supported on this device';
-      });
-      return;
-    }
+    if (!_isNFCReady || !_nfcAvailable) return;
 
     setState(() {
       _isNFCListening = true;
@@ -101,134 +88,128 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
 
     try {
       await NfcManager.instance.startSession(onDiscovered: (NfcTag tag) async {
-        // When any NFC tag is detected, process as payment
-        await _processNFCPayment(tag);
+        await _processBooking();
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
-        _nfcStatus = 'NFC not enabled or not supported on this device';
+        _nfcStatus = 'Error starting NFC. Please pay manually.';
         _isNFCListening = false;
-        _isNFCReady = false;
+        _nfcAvailable = false;
       });
     }
   }
 
   Future<void> _stopNFCListening() async {
+    if (!_nfcAvailable) return;
     try {
       await NfcManager.instance.stopSession();
+    } catch (_) {}
+    if (mounted) {
       setState(() {
         _isNFCListening = false;
       });
-    } catch (e) {
-      // Handle error silently
     }
   }
 
-  Future<void> _processNFCPayment(NfcTag tag) async {
-    // Stop NFC listening first
+  // UNIFIED BOOKING FUNCTION
+  Future<void> _processBooking() async {
     await _stopNFCListening();
+
+    if (!mounted) return;
 
     setState(() {
       _isPaymentProcessing = true;
       _nfcStatus = 'Processing payment...';
     });
 
-    // Simulate payment processing (in real app, this would validate the card)
     await Future.delayed(const Duration(seconds: 2));
 
-    setState(() {
-      _isPaymentProcessing = false;
-      _isPaymentComplete = true;
-      _nfcStatus = 'Payment successful!';
-    });
+    try {
+      final busDocId = _ticketDetails['busDocId'];
+      final seatCountStr = _ticketDetails['seatCount'];
+      final userId = _ticketDetails['userId'];
+      final int seats = int.tryParse(seatCountStr.toString()) ?? 0;
 
-    // Wait a bit and then redirect to home
-    if (mounted) {
-      await Future.delayed(const Duration(seconds: 2));
-      if (mounted) {
-        goToTicketScreen();
+      if (busDocId != null && userId != null && seats > 0) {
+        final busRef =
+            FirebaseFirestore.instance.collection('Buses').doc(busDocId);
+
+        await FirebaseFirestore.instance.runTransaction((transaction) async {
+          final busSnapshot = await transaction.get(busRef);
+          if (!busSnapshot.exists) throw Exception("Bus not found!");
+
+          final data = busSnapshot.data() as Map<String, dynamic>;
+
+          int currentAvailable = 0;
+          var availableVal = data['availableSeats'];
+          if (availableVal is int) {
+            currentAvailable = availableVal;
+          } else if (availableVal is String) {
+            currentAvailable = int.tryParse(availableVal) ?? 0;
+          } else {
+            var totalVal = data['totalSeats'];
+            currentAvailable = (totalVal is int)
+                ? totalVal
+                : int.tryParse(totalVal.toString()) ?? 0;
+          }
+
+          if (currentAvailable < seats) {
+            throw Exception("Bus full! Only $currentAvailable seats left.");
+          }
+
+          transaction.update(busRef, {
+            'availableSeats': FieldValue.increment(-seats),
+          });
+
+          final ticketRef =
+              FirebaseFirestore.instance.collection('Ticket').doc();
+          transaction.set(ticketRef, {
+            'userId': userId,
+            'busNumber': _ticketDetails['busNumber'],
+            'pickup': _ticketDetails['pickupLocation'],
+            'destination': _ticketDetails['destination'],
+            'seatCount': seats,
+            'totalPrice': _ticketDetails['totalPrice'],
+            'timestamp': FieldValue.serverTimestamp(),
+            'isUsed': false,
+          });
+        });
+
+        if (!mounted) return;
+        setState(() {
+          _isPaymentProcessing = false;
+          _isPaymentComplete = true;
+          _nfcStatus = 'Payment & Booking Successful!';
+        });
+
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) {
+          Navigator.pushNamedAndRemoveUntil(
+            context,
+            AppConstants.ticketRoute,
+            (route) => false,
+            arguments: {
+              'busNumber': _ticketDetails['busNumber'],
+              'pickupLocation': _ticketDetails['pickupLocation'],
+            },
+          );
+        }
+      } else {
+        throw Exception("Invalid ticket info");
       }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _nfcStatus = 'Failed: ${e.toString().replaceAll("Exception: ", "")}';
+        _isPaymentProcessing = false;
+      });
+      _nfcAvailable = false;
     }
-  }
-
-  void goToTicketScreen() {
-    Navigator.pushNamedAndRemoveUntil(
-      context,
-      AppConstants.ticketRoute,
-      (route) => false,
-      arguments: {
-        'busNumber': _ticketDetails['busNumber'],
-        'pickupLocation': _ticketDetails['pickupLocation'],
-      },
-    );
   }
 
   Future<void> _retryNFC() async {
-    setState(() {
-      _isPaymentProcessing = false;
-      _isPaymentComplete = false;
-      _nfcStatus = 'Checking NFC availability...';
-    });
-
-    // Re-check NFC status
-    await _checkNFCStatus();
-
-    if (_isNFCReady) {
-      // Start listening again
-      _startNFCListening();
-    }
-  }
-
-  Widget _buildNFCStatusWidget() {
-    if (!_isNFCReady) {
-      return Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(
-            Icons.nfc_outlined,
-            color: AppTheme.redColor,
-            size: 80,
-          ),
-          const SizedBox(height: 10),
-          Text(
-            'NFC Issue',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: AppTheme.redColor,
-                  fontWeight: FontWeight.bold,
-                ),
-          ),
-        ],
-      );
-    }
-
-    // NFC is ready
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(
-          Icons.contactless,
-          color: _isNFCListening
-              ? AppTheme.accentColor
-              : AppTheme.greyColor.withValues(alpha: 0.7),
-          size: 80,
-        ),
-        const SizedBox(height: 10),
-        if (_isNFCListening)
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppTheme.accentColor.withValues(alpha: 0.2),
-            ),
-            child: const Icon(
-              Icons.wifi,
-              color: AppTheme.accentColor,
-              size: 20,
-            ),
-          ),
-      ],
-    );
+    await _initNFC();
   }
 
   @override
@@ -243,13 +224,11 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 24.0),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
                       const SizedBox(height: 20),
                       const Center(child: AppLogo()),
                       const SizedBox(height: 40),
 
-                      // NFC Animation/Icon
                       Container(
                         width: 200,
                         height: 200,
@@ -257,122 +236,105 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
                           color: AppTheme.greyColor,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: _isNFCListening
-                                ? AppTheme.accentColor
-                                : !_isNFCReady
-                                    ? AppTheme.redColor
-                                    : AppTheme.greyColor,
-                            width: 2,
-                          ),
+                              color: _isNFCListening
+                                  ? AppTheme.accentColor
+                                  : AppTheme.greyColor,
+                              width: 2),
                         ),
                         child: Center(
                           child: _isPaymentProcessing
                               ? const CircularProgressIndicator(
-                                  color: AppTheme.accentColor,
-                                )
+                                  color: AppTheme.accentColor)
                               : _isPaymentComplete
-                                  ? const Icon(
-                                      Icons.check_circle,
-                                      color: AppTheme.greenColor,
-                                      size: 80,
-                                    )
-                                  : _buildNFCStatusWidget(),
+                                  ? const Icon(Icons.check_circle,
+                                      color: AppTheme.greenColor, size: 80)
+                                  : _nfcAvailable
+                                      ? Icon(Icons.contactless,
+                                          size: 80,
+                                          color: _isNFCListening
+                                              ? AppTheme.accentColor
+                                              : Colors.grey)
+                                      : const Icon(Icons.payment,
+                                          size: 80,
+                                          color: AppTheme.accentColor),
                         ),
                       ),
                       const SizedBox(height: 30),
 
-                      Text(
-                        _isPaymentProcessing
-                            ? 'Processing Payment...'
-                            : _isPaymentComplete
-                                ? 'Payment Successful!'
-                                : 'NFC Payment',
-                        style: Theme.of(context).textTheme.displayMedium,
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 20),
+                      Text(_nfcStatus,
+                          style: Theme.of(context)
+                              .textTheme
+                              .bodyLarge
+                              ?.copyWith(
+                                  color: _nfcAvailable
+                                      ? Colors.black
+                                      : AppTheme.redColor,
+                                  fontWeight: _nfcAvailable
+                                      ? FontWeight.normal
+                                      : FontWeight.bold),
+                          textAlign: TextAlign.center),
 
-                      if (_ticketDetails.containsKey('seatCount'))
-                        Text(
-                          'Seat Count: ${_ticketDetails['seatCount']}',
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                          textAlign: TextAlign.center,
-                        ),
-                      const SizedBox(height: 15),
-
-                      // Show total price amount
-                      if (_ticketDetails.containsKey('totalPrice'))
-                        Text(
-                          'Amount: Rs. ${_ticketDetails['totalPrice']?.toStringAsFixed(0)}',
-                          style:
-                              Theme.of(context).textTheme.titleLarge?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                          textAlign: TextAlign.center,
-                        ),
-                      const SizedBox(height: 20),
-
-                      Text(
-                        _nfcStatus,
-                        style: Theme.of(context).textTheme.bodyMedium,
-                        textAlign: TextAlign.center,
-                      ),
                       const SizedBox(height: 30),
 
-                      // Retry button - only show when NFC is not ready
                       if (!_isPaymentProcessing &&
                           !_isPaymentComplete &&
-                          !_isNFCReady)
-                        SizedBox(
-                          width: 200,
-                          child: CustomButton(
+                          _nfcAvailable &&
+                          !_isNFCListening)
+                        CustomButton(
                             text: 'Retry NFC',
                             onPressed: _retryNFC,
-                            backgroundColor: AppTheme.accentColor,
-                          ),
+                            width: 200),
+
+                      if (!_isPaymentProcessing &&
+                          !_isPaymentComplete &&
+                          !_nfcAvailable)
+                        Column(
+                          children: [
+                            const SizedBox(height: 10),
+                            CustomButton(
+                                text: 'Confirm Payment',
+                                onPressed: _processBooking,
+                                backgroundColor: AppTheme.greenColor,
+                                width: 200),
+                          ],
                         ),
 
-                      const SizedBox(height: 20),
-
-                      // Cancel button
+                      // --- CANCEL BUTTON FIXED ---
                       if (!_isPaymentProcessing && !_isPaymentComplete)
-                        SizedBox(
-                          width: 200,
+                        Padding(
+                          padding: const EdgeInsets.only(top: 10.0),
                           child: CustomButton(
-                            text: 'Cancel Payment',
-                            onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Payment cancelled!'),
-                                  backgroundColor: AppTheme.redColor,
-                                  duration: Duration(seconds: 2),
-                                ),
-                              );
-                              goToTicketScreen();
-                            },
-                            backgroundColor: AppTheme.greyColor,
-                            textColor: AppTheme.accentColor,
-                          ),
-                        ),
+                              text: 'Cancel',
+                              onPressed: () {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                        content: Text('Payment Cancelled')));
 
-                      const SizedBox(height: 20),
+                                // THIS IS THE FIX: Redirect directly to Ticket Screen, removing checkout from stack
+                                Navigator.pushNamedAndRemoveUntil(
+                                  context,
+                                  AppConstants.ticketRoute,
+                                  (route) => false,
+                                  arguments: {
+                                    'busNumber': _ticketDetails['busNumber'],
+                                    'pickupLocation':
+                                        _ticketDetails['pickupLocation'],
+                                  },
+                                );
+                              },
+                              backgroundColor: AppTheme.greyColor,
+                              textColor: AppTheme.accentColor,
+                              width: 200),
+                        ),
                     ],
                   ),
                 ),
               ),
             ),
             CustomBottomNavigationBar(
-              currentIndex: _currentIndex,
+              currentIndex: 2,
               onTap: (index) {
                 if (_isPaymentProcessing || _isNFCListening) return;
-
-                setState(() {
-                  _currentIndex = index;
-                });
-
                 switch (index) {
                   case 0:
                     Navigator.pushNamedAndRemoveUntil(
@@ -384,12 +346,7 @@ class _NFCPaymentScreenState extends State<NFCPaymentScreen> {
                         arguments: {'initialTab': 1});
                     break;
                   case 2:
-                    // Already on payment screen or navigate back to ticket
-                    if (_isPaymentComplete) {
-                      Navigator.pushNamedAndRemoveUntil(
-                          context, AppConstants.mainRoute, (route) => false,
-                          arguments: {'initialTab': 2});
-                    }
+                    Navigator.pop(context);
                     break;
                   case 3:
                     Navigator.pushNamedAndRemoveUntil(
