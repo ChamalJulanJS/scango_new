@@ -27,8 +27,6 @@ class TicketScreen extends StatefulWidget {
 }
 
 class _TicketScreenState extends State<TicketScreen> {
-  // REMOVED: bool _autoProcess = false; (This was causing the warning)
-
   final AuthService _authService = AuthService();
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   // Speech to text
@@ -357,6 +355,7 @@ If not found, use null.
     }
   }
 
+  // FETCH ONLY STARTED BUSES
   Future<void> _fetchBusNumbers() async {
     setState(() {
       _isLoading = true;
@@ -369,13 +368,18 @@ If not found, use null.
         });
         return;
       }
+
+      // FIX: Filter query to only show started buses
       final busesSnapshot = await _firestore
           .collection('Buses')
           .where('userId', isEqualTo: userId)
+          .where('isStarted', isEqualTo: true)
           .get();
+
       final buses = busesSnapshot.docs
           .map((doc) => doc.data()['busNumber'] as String)
           .toList();
+
       setState(() {
         _busNumbers = buses;
         _isLoading = false;
@@ -385,6 +389,8 @@ If not found, use null.
         setState(() {
           _isLoading = false;
         });
+        // Optional: Handle error silently or show log
+        log("Error fetching buses: $e");
       }
     }
   }
@@ -497,8 +503,7 @@ If not found, use null.
           'destination': _destinationController.text.trim(),
           'seatCount': _seatCountController.text,
           'totalPrice': totalPrice,
-          'autoProcess':
-              true, // Enable auto-flow for next screens (Used in checkout logic)
+          'autoProcess': true,
           'busDocId': _busDocId,
           'userId': userId,
           'currentAvailableSeats': _availableSeats,
@@ -509,8 +514,6 @@ If not found, use null.
 
   @override
   Widget build(BuildContext context) {
-    // REMOVED: _autoProcess = widget.initialBusNumber != null;
-
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -704,7 +707,6 @@ If not found, use null.
     );
   }
 
-  // Helper methods for Voice Button, Dropdowns, Gemini, etc.
   Center _voiceRecognitionButton() {
     return Center(
       child: Column(
@@ -903,12 +905,17 @@ If not found, use null.
   void _initGemini() {
     try {
       if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
-        log('WARNING: Using default Gemini API key.');
+        log('WARNING: Using default Gemini API key. Replace with your actual key in config.dart');
       }
+
       Gemini.instance;
+      log('Gemini initialized successfully in TicketScreen');
     } catch (e) {
+      log('Error initializing Gemini: $e');
+
       try {
         Gemini.init(apiKey: AppConfig.geminiApiKey);
+        log('Gemini initialized in TicketScreen');
       } catch (e) {
         log('Failed to initialize Gemini: $e');
       }
@@ -917,6 +924,7 @@ If not found, use null.
 
   void _showSuccessSnackBar(String message) {
     ScaffoldMessenger.of(context).clearSnackBars();
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -928,6 +936,7 @@ If not found, use null.
 
   void _showInfoSnackBar(String message) {
     ScaffoldMessenger.of(context).clearSnackBars();
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
