@@ -55,13 +55,10 @@ class DataService {
 
     if (result.id.isNotEmpty) {
       log("Bus added with ID: ${result.id}");
-      // return success message
       return 'Bus added successfully';
     }
 
-    // log the error
     log(result.toString());
-    // return error message
     return 'Failed to add bus';
   }
 
@@ -78,6 +75,29 @@ class DataService {
 
     return querySnapshot.docs.isNotEmpty;
   }
+
+  // --- NEW METHOD: Check for active/started bus ---
+  Future<DocumentSnapshot?> getActiveBus() async {
+    final String? userId = _authService.currentUser?.uid;
+    if (userId == null) return null;
+
+    try {
+      final querySnapshot = await busesCollection
+          .where('userId', isEqualTo: userId)
+          .where('isStarted', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (querySnapshot.docs.isNotEmpty) {
+        return querySnapshot.docs.first;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Error checking active bus: $e');
+      return null;
+    }
+  }
+  // -----------------------------------------------
 
   Stream<QuerySnapshot> searchBuses({
     String? source,
@@ -142,7 +162,6 @@ class DataService {
         .snapshots();
   }
 
-  // Get all tickets for a specific date and optionally filtered by bus number (only for current user's buses)
   Stream<QuerySnapshot> getTicketsByDateAndBus({
     required DateTime date,
     String? busNumber,
@@ -152,13 +171,10 @@ class DataService {
       throw Exception('User not authenticated');
     }
 
-    // Create start and end of the selected day for timestamp comparison
     final startOfDay = DateTime(date.year, date.month, date.day);
     final endOfDay = DateTime(date.year, date.month, date.day, 23, 59, 59, 999);
 
-    // If specific bus number is provided, check if it belongs to the user
     if (busNumber != null && busNumber.isNotEmpty) {
-      // Return tickets for the specific bus and date
       return ticketsCollection
           .where('timestamp',
               isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
@@ -166,23 +182,15 @@ class DataService {
           .where('busNumber', isEqualTo: busNumber)
           .snapshots();
     } else {
-      // For all user's buses, this is more complex
-      // We'll need to get the user's buses first, then use the list in a query
-      // This is a workaround using two separate queries
-
-      // Return a stream that first fetches the user's buses, then uses that to filter tickets
       return Stream.fromFuture(
               busesCollection.where('userId', isEqualTo: userId).get())
           .asyncExpand((busSnapshot) {
-        // Extract bus numbers owned by the current user
         final userBusNumbers = busSnapshot.docs
             .map((doc) =>
                 (doc.data() as Map<String, dynamic>)['busNumber'] as String)
             .toList();
 
         if (userBusNumbers.isEmpty) {
-          // If user has no buses, return empty result - use limit(1) and add a filter that will never match
-          // instead of limit(0) which causes an assertion error
           return ticketsCollection
               .where('busNumber',
                   isEqualTo: 'NO_BUSES_FAKE_ID_TO_ENSURE_NO_RESULTS')
@@ -190,7 +198,6 @@ class DataService {
               .snapshots();
         }
 
-        // Otherwise, filter by all of the user's buses
         return ticketsCollection
             .where('timestamp',
                 isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
@@ -202,7 +209,6 @@ class DataService {
     }
   }
 
-  // Get all bus numbers for populating the dropdown (only for current user)
   Future<List<String>> getAllBusNumbers() async {
     final String? userId = _authService.currentUser?.uid;
     if (userId == null) {
@@ -210,11 +216,9 @@ class DataService {
     }
 
     try {
-      // Get bus numbers from Buses collection where user is the owner
       final busesSnapshot =
           await busesCollection.where('userId', isEqualTo: userId).get();
 
-      // Extract and sort bus numbers
       final busNumbers = busesSnapshot.docs
           .map((doc) =>
               (doc.data() as Map<String, dynamic>)['busNumber'] as String)
@@ -223,13 +227,11 @@ class DataService {
 
       return busNumbers;
     } catch (e) {
-      // Handle any errors
       debugPrint('Error getting bus numbers: $e');
       return [];
     }
   }
-  
-  // Update bus status (start/stop)
+
   Future<void> updateBusStatus(String busId, bool isStarted) async {
     try {
       await busesCollection.doc(busId).update({
@@ -241,8 +243,7 @@ class DataService {
       throw Exception('Failed to update bus status: $e');
     }
   }
-  
-  // Get a specific bus by ID
+
   Future<DocumentSnapshot?> getBusById(String busId) async {
     try {
       return await busesCollection.doc(busId).get();
@@ -251,7 +252,7 @@ class DataService {
       return null;
     }
   }
-  
+
   Future<List<DocumentSnapshot>> getUserBuses() async {
     final String? userId = _authService.currentUser?.uid;
     if (userId == null) {
@@ -275,7 +276,6 @@ class DataService {
     });
   }
 
-  // Storage operations
   Future<String> uploadImage(
       String path, List<int> imageBytes, String fileName) async {
     final Reference reference = _storage.ref().child(path).child(fileName);
