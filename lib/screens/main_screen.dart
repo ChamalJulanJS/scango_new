@@ -33,7 +33,10 @@ class _MainScreenState extends State<MainScreen> {
   String? _busNumber;
   String? _pickupLocation;
 
-  final Set<int> _pinProtectedTabs = {1, 3, 4};
+  final Set<int> _pinProtectedTabs = {
+    1,
+    3,
+  };
 
   bool _initialPinCheckDone = false;
 
@@ -45,7 +48,6 @@ class _MainScreenState extends State<MainScreen> {
     _currentIndex = widget.initialTab;
     _busNumber = widget.busNumber;
     _pickupLocation = widget.pickupLocation;
-
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkInitialTabProtection();
@@ -101,7 +103,7 @@ class _MainScreenState extends State<MainScreen> {
     if (args != null && args is Map<String, dynamic>) {
       _initialPinCheckDone = true;
 
- //     _handleNavigationArguments(args);
+      //     _handleNavigationArguments(args);
 
       // Debug: Print which tab we're currently on after navigation
       debugPrint('DEBUG: Current tab index after navigation: $_currentIndex');
@@ -112,7 +114,6 @@ class _MainScreenState extends State<MainScreen> {
     setState(() {
       _isTabSwitching = true;
     });
-    
 
     debugPrint(
         'DEBUG: Attempting to navigate from tab $_currentIndex to tab $index');
@@ -138,7 +139,8 @@ class _MainScreenState extends State<MainScreen> {
         'arguments': targetArgs,
       };
 
-      debugPrint('DEBUG: Tab requires PIN. Showing verification for tab: $index');
+      debugPrint(
+          'DEBUG: Tab requires PIN. Showing verification for tab: $index');
 
       // Reset tab switching flag after a short delay, even if we're navigating away
       Future.delayed(Duration(milliseconds: 300), () {
