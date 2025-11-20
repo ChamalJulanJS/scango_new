@@ -25,11 +25,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (args != null && args is Map<String, dynamic>) {
       _ticketDetails = args;
 
-      // Check for Auto Process (Voice Command)
+      // Auto-redirect for voice commands
       if (_ticketDetails.containsKey('autoProcess') &&
           _ticketDetails['autoProcess'] == true &&
           !_isRouted) {
-        // Auto-redirect for voice commands
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _redirectToNFC();
         });
@@ -37,7 +36,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     }
   }
 
-  // Unified Redirect Method: Sends BOTH manual and auto users to NFC Screen
+  // Unified Redirect: Both Manual "Pay" and Auto-Voice use this
   Future<void> _redirectToNFC() async {
     if (!mounted) return;
 
@@ -67,7 +66,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Prevents back button if processing
     return PopScope(
       canPop: !_isProcessing,
       child: Scaffold(
@@ -139,6 +137,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                                   Expanded(
                                       child: CustomButton(
                                           text: 'Pay',
+                                          // FIX: Calls redirect instead of processing immediately
                                           onPressed: _redirectToNFC,
                                           backgroundColor:
                                               AppTheme.accentColor)),
