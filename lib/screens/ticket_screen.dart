@@ -1,0 +1,997 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:speech_to_text/speech_recognition_result.dart';
+import 'dart:developer';
+import '../utils/constants.dart';
+import '../widgets/common_widgets.dart';
+import '../theme/app_theme.dart';
+import '../services/auth_service.dart';
+import 'package:flutter_gemini/flutter_gemini.dart';
+import 'dart:convert';
+import '../utils/config.dart';
+
+class TicketScreen extends StatefulWidget {
+  final String? initialBusNumber;
+  final String? initialPickupLocation;
+
+  const TicketScreen({
+    super.key,
+    this.initialBusNumber,
+    this.initialPickupLocation,
+  });
+
+  @override
+  State<TicketScreen> createState() => _TicketScreenState();
+}
+
+class _TicketScreenState extends State<TicketScreen> {
+  final AuthService _authService = AuthService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  // Speech to text
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _isListening = false;
+  bool _isProcessing = false;
+  String _lastWords = '';
+  bool _speechEnabled = false;
+
+  // Gemini instance
+  final Gemini _gemini = Gemini.instance;
+
+  String? _selectedBusNumber;
+  String? _selectedPickupLocation;
+
+  // Controllers
+  final TextEditingController _destinationController = TextEditingController();
+  final TextEditingController _seatCountController = TextEditingController();
+
+  // Data
+  List<String> _busNumbers = [];
+  List<String> _pickupLocations = [];
+  bool _isLoading = true;
+  int? _availableSeats;
+  String? _busDocId;
+  String? _busFullError;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _selectedBusNumber = widget.initialBusNumber;
+    _selectedPickupLocation = widget.initialPickupLocation;
+
+    _fetchBusNumbers();
+    _initSpeech();
+    _initGemini();
+
+    if (_selectedBusNumber != null && _pickupLocations.isEmpty) {
+      _fetchPickupLocations(_selectedBusNumber!);
+      _fetchAvailableSeats(_selectedBusNumber!);
+    }
+
+    if (_selectedBusNumber != null) {
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Bus $_selectedBusNumber selected.'),
+              backgroundColor: AppTheme.greenColor,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      });
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (widget.initialPickupLocation != null &&
+        _pickupLocations.isNotEmpty &&
+        _pickupLocations.contains(widget.initialPickupLocation) &&
+        _selectedPickupLocation != widget.initialPickupLocation) {
+      setState(() {
+        _selectedPickupLocation = widget.initialPickupLocation;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _destinationController.dispose();
+    _seatCountController.dispose();
+    super.dispose();
+  }
+
+  void _initGemini() {
+    try {
+      if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
+        log('WARNING: Using default Gemini API key.');
+      }
+      Gemini.instance;
+    } catch (e) {
+      try {
+        Gemini.init(apiKey: AppConfig.geminiApiKey);
+      } catch (e) {
+        log('Failed to initialize Gemini: $e');
+      }
+    }
+  }
+
+  void _initSpeech() async {
+    _speechEnabled = await _speech.initialize(
+      onError: (error) {
+        log('Speech error: $error');
+        setState(() {
+          _isListening = false;
+        });
+      },
+      onStatus: (status) {
+        log('Speech status: $status');
+        if (status == 'done' || status == 'notListening') {
+          setState(() {
+            _isListening = false;
+          });
+
+          if (!_isProcessing) {
+            setState(() {
+              _isProcessing = true;
+            });
+
+            Future.delayed(const Duration(milliseconds: 1500), () {
+              if (mounted) {
+                setState(() {
+                  _isProcessing = false;
+                });
+              }
+            });
+          }
+        }
+      },
+    );
+    setState(() {});
+    _checkLanguageAvailability();
+  }
+
+  void _checkLanguageAvailability() async {
+    try {
+      final languages = await _speech.locales();
+      final sinhalaLocale = languages
+          .where((locale) =>
+              locale.localeId.contains('si') ||
+              locale.localeId.contains('LK') ||
+              locale.localeId.toLowerCase() == 'si-lk')
+          .toList();
+
+      if (sinhalaLocale.isNotEmpty) {
+        log('Sinhala language found');
+      }
+    } catch (e) {
+      log('Error checking language availability: $e');
+    }
+  }
+
+  void _startListening() async {
+    if (_availableSeats != null && _availableSeats! <= 0) {
+      _showErrorSnackBar(_busFullError ?? 'No Available Seats');
+      return;
+    }
+
+    if (!_speechEnabled) {
+      log('Speech recognition not available');
+      return;
+    }
+
+    await _speech.listen(
+        listenOptions: stt.SpeechListenOptions(),
+        onResult: _onSpeechResult,
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 10),
+        localeId: 'si-LK');
+
+    setState(() {
+      _isListening = true;
+    });
+  }
+
+  void _stopListening() async {
+    try {
+      await _speech.stop();
+      _showInfoSnackBar('Speech recognition stopped');
+    } catch (e) {
+      log('Error stopping speech recognition: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isListening = false;
+        });
+      }
+    }
+  }
+
+  void _onSpeechResult(SpeechRecognitionResult result) {
+    setState(() {
+      _lastWords = result.recognizedWords;
+    });
+
+    if (result.finalResult && result.recognizedWords.isNotEmpty) {
+      _processSinhalaTextWithGemini(result.recognizedWords);
+    }
+  }
+
+  Future<void> _processSinhalaTextWithGemini(String sinhalaText) async {
+    if (_isListening) {
+      _stopListening();
+    }
+
+    setState(() {
+      _isProcessing = true;
+    });
+
+    _showInfoSnackBar('Processing your speech...');
+
+    try {
+      final String systemPrompt = """
+Extract the city name and number of seats from this Sinhala text.
+Return as JSON with "city" in English and "seats" as a number.
+If not found, use null.
+""";
+
+      try {
+        final prompt = "$systemPrompt\nText: $sinhalaText\nJSON:";
+        final response = await _gemini.chat([
+          Content(parts: [Part.text(prompt)], role: 'user')
+        ]);
+
+        if (response != null && response.output != null) {
+          final jsonResponse = _extractJsonFromResponse(response.output!);
+          if (jsonResponse != null) {
+            _updateFieldsFromGeminiResponse(jsonResponse);
+            _showSuccessSnackBar('Information extracted successfully!');
+            return;
+          }
+        }
+      } catch (e) {
+        log('Text method failed: $e');
+      }
+    } catch (e) {
+      _showErrorSnackBar('Error processing with AI: $e');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isProcessing = false;
+          _isListening = false;
+        });
+      }
+    }
+  }
+
+  Map<String, dynamic>? _extractJsonFromResponse(String response) {
+    try {
+      try {
+        return json.decode(response) as Map<String, dynamic>;
+      } catch (_) {}
+
+      final RegExp jsonRegExp = RegExp(r'{[\s\S]*}');
+      final Match? match = jsonRegExp.firstMatch(response);
+
+      if (match != null) {
+        final String jsonString = match.group(0)!;
+        return json.decode(jsonString) as Map<String, dynamic>;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  void _updateFieldsFromGeminiResponse(Map<String, dynamic> jsonResponse) {
+    if (mounted) {
+      setState(() {
+        if (jsonResponse.containsKey('city') && jsonResponse['city'] != null) {
+          _destinationController.text = jsonResponse['city'].toString();
+        }
+        if (jsonResponse.containsKey('seats') &&
+            jsonResponse['seats'] != null) {
+          _seatCountController.text = jsonResponse['seats'].toString();
+        }
+        _isListening = false;
+        _isProcessing = false;
+      });
+
+      if (_destinationController.text.isNotEmpty &&
+          _seatCountController.text.isNotEmpty &&
+          _canProceedToCheckout()) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            _submitTicket();
+          }
+        });
+      }
+    }
+  }
+
+  // --- FETCH BUS DETAILS & CHECK STATUS ON SELECTION ---
+  Future<void> _fetchAvailableSeats(String busNumber) async {
+    try {
+      final busQuery = await _firestore
+          .collection('Buses')
+          .where('busNumber', isEqualTo: busNumber)
+          .limit(1)
+          .get();
+
+      if (busQuery.docs.isNotEmpty) {
+        final doc = busQuery.docs.first;
+        final data = doc.data();
+        _busDocId = doc.id;
+
+        // 1. Check if the bus has started
+        final bool isStarted = data['isStarted'] ?? false;
+
+        if (!isStarted) {
+          // If user selected an inactive bus, show error NOW
+          if (mounted) {
+            setState(() {
+              _availableSeats = 0;
+              _busFullError = 'Bus Not Started';
+            });
+            _showErrorSnackBar('This bus route has not started yet.');
+          }
+          return;
+        }
+
+        // 2. Parse Seats Safely
+        int seats = 0;
+        var available = data['availableSeats'];
+        var total = data['totalSeats'];
+
+        if (available is int) {
+          seats = available;
+        } else if (available is String) {
+          seats = int.tryParse(available) ?? 0;
+        } else if (total is int) {
+          seats = total;
+        } else if (total is String) {
+          seats = int.tryParse(total) ?? 0;
+        }
+
+        if (mounted) {
+          setState(() {
+            _availableSeats = seats;
+            _busFullError = (_availableSeats == 0) ? 'Bus is full' : null;
+          });
+        }
+      } else {
+        if (mounted) {
+          setState(() {
+            _availableSeats = 0;
+            _busFullError = 'Bus not found';
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _availableSeats = 0;
+          _busFullError = 'Error loading bus info';
+        });
+      }
+    }
+  }
+
+  // --- FIXED: FETCH ALL BUSES (Do not filter here) ---
+  Future<void> _fetchBusNumbers() async {
+    setState(() {
+      _isLoading = true;
+    });
+    try {
+      final userId = _authService.currentUser?.uid;
+      if (userId == null) {
+        setState(() {
+          _isLoading = false;
+        });
+        return;
+      }
+
+      // Fetch ALL buses, so the user can see them in the list
+      final busesSnapshot = await _firestore
+          .collection('Buses')
+          .where('userId', isEqualTo: userId)
+          .get();
+
+      final buses = busesSnapshot.docs
+          .map((doc) => doc.data()['busNumber'] as String)
+          .toList();
+
+      setState(() {
+        _busNumbers = buses;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchPickupLocations(String busNumber) async {
+    setState(() {
+      _isLoading = true;
+      _pickupLocations = [];
+      if (widget.initialPickupLocation != _selectedPickupLocation) {
+        _selectedPickupLocation = null;
+      }
+    });
+    try {
+      final busDoc = await _firestore
+          .collection('Buses')
+          .where('busNumber', isEqualTo: busNumber)
+          .get();
+      if (busDoc.docs.isNotEmpty) {
+        final routes =
+            List<String>.from(busDoc.docs.first.data()['route'] ?? []);
+        setState(() {
+          _pickupLocations = routes;
+          _isLoading = false;
+          if (widget.initialPickupLocation != null &&
+              _pickupLocations.contains(widget.initialPickupLocation)) {
+            _selectedPickupLocation = widget.initialPickupLocation;
+          }
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+    }
+  }
+
+  double _calculateTotalPrice() {
+    final seatCount = int.tryParse(_seatCountController.text) ?? 0;
+    return seatCount * 100.0;
+  }
+
+  Future<bool> _validateDestination() async {
+    try {
+      final busDoc = await _firestore
+          .collection('Buses')
+          .where('busNumber', isEqualTo: _selectedBusNumber)
+          .get();
+
+      if (busDoc.docs.isEmpty) return false;
+
+      final routes = List<String>.from(busDoc.docs.first.data()['route'] ?? []);
+      final destination = _destinationController.text.trim();
+
+      if (routes.contains(destination)) return true;
+
+      final prompt =
+          """I have a bus with the following routes: ${routes.join(', ')}. 
+      Is '$destination' included in or near these routes? Answer only with 'yes' or 'no'.""";
+
+      final response = await _gemini.chat([
+        Content(parts: [Part.text(prompt)], role: 'user')
+      ]);
+
+      if (response != null && response.output != null) {
+        final answer = response.output!.toLowerCase();
+        return answer.contains('yes');
+      }
+      return false;
+    } catch (e) {
+      debugPrint('Error validating destination: $e');
+      return true;
+    }
+  }
+
+  bool _canProceedToCheckout() {
+    return _selectedBusNumber != null &&
+        _selectedPickupLocation != null &&
+        _destinationController.text.isNotEmpty &&
+        _seatCountController.text.isNotEmpty &&
+        (int.tryParse(_seatCountController.text) ?? 0) > 0;
+  }
+
+  Future<void> _submitTicket() async {
+    if (_selectedBusNumber == null) {
+      _showErrorSnackBar('Please select a bus number');
+      return;
+    }
+    if (_selectedPickupLocation == null) {
+      _showErrorSnackBar('Please select a pickup location');
+      return;
+    }
+    if (_destinationController.text.isEmpty) {
+      _showErrorSnackBar('Please enter a destination');
+      return;
+    }
+    if (_seatCountController.text.isEmpty) {
+      _showErrorSnackBar('Please enter the number of seats');
+      return;
+    }
+
+    final seatCount = int.tryParse(_seatCountController.text);
+    if (seatCount == null || seatCount <= 0) {
+      _showErrorSnackBar('Please enter a valid seat count');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    // Status Check BEFORE proceeding
+    if (_busFullError == 'Bus Not Started') {
+      _showErrorSnackBar('This bus route has not started yet.');
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    final isValidDestination = await _validateDestination();
+    if (!isValidDestination) {
+      _showErrorSnackBar('Destination not on this bus route');
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    final totalPrice = _calculateTotalPrice();
+
+    if (_availableSeats != null && _availableSeats! < seatCount) {
+      _showErrorSnackBar(_busFullError ?? 'Not enough seats available.');
+      setState(() {
+        _isLoading = false;
+      });
+      return;
+    }
+
+    if (mounted) {
+      final userId = _authService.currentUser?.uid;
+      setState(() {
+        _isLoading = false;
+      });
+
+      Navigator.pushNamed(
+        context,
+        AppConstants.checkoutRoute,
+        arguments: {
+          'busNumber': _selectedBusNumber,
+          'pickupLocation': _selectedPickupLocation,
+          'destination': _destinationController.text.trim(),
+          'seatCount': _seatCountController.text,
+          'totalPrice': totalPrice,
+          'autoProcess': true,
+          'busDocId': _busDocId,
+          'userId': userId,
+          'currentAvailableSeats': _availableSeats,
+        },
+      );
+    }
+  }
+
+  // UI Helper Methods
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.redColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showSuccessSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: AppTheme.greenColor,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _showInfoSnackBar(String message) {
+    ScaffoldMessenger.of(context).clearSnackBars();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 1),
+      ),
+    );
+  }
+
+  Widget _buildBusNumberDropdown() {
+    bool isFromBussesScreen = widget.initialBusNumber != null;
+
+    if (_selectedBusNumber != null &&
+        !_busNumbers.contains(_selectedBusNumber)) {
+      if (isFromBussesScreen && _selectedBusNumber != null) {
+        _busNumbers.add(_selectedBusNumber!);
+      }
+    }
+
+    return DropdownButtonFormField<String>(
+      initialValue: _selectedBusNumber,
+      decoration: InputDecoration(
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+        prefixIcon: const Icon(Icons.directions_bus),
+        filled: isFromBussesScreen,
+        fillColor: isFromBussesScreen ? Colors.grey.shade200 : null,
+      ),
+      items: _busNumbers.map((String busNumber) {
+        return DropdownMenuItem<String>(
+          value: busNumber,
+          child: Text(busNumber),
+        );
+      }).toList(),
+      onChanged: isFromBussesScreen
+          ? null
+          : (String? newValue) {
+              setState(() {
+                _selectedBusNumber = newValue;
+                _selectedPickupLocation = null;
+                _pickupLocations = [];
+                _availableSeats = null;
+                _busFullError = null;
+              });
+              if (newValue != null) {
+                _fetchPickupLocations(newValue);
+                _fetchAvailableSeats(newValue);
+              }
+            },
+    );
+  }
+
+  Widget _buildDropdown({
+    required String? value,
+    required List<String> items,
+    required String hint,
+    required void Function(String?)? onChanged,
+  }) {
+    return GestureDetector(
+      onTap: () {
+        AppConfig.fromDropDown = true;
+      },
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12.0),
+        decoration: BoxDecoration(
+          border: Border.all(color: AppTheme.accentColor),
+          borderRadius: BorderRadius.circular(10.0),
+        ),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: value,
+            hint: Text(
+              hint,
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            items: items.map((item) {
+              return DropdownMenuItem<String>(
+                value: item,
+                child: Text(
+                  item,
+                  style: Theme.of(context).textTheme.bodyMedium,
+                ),
+              );
+            }).toList(),
+            onChanged: onChanged,
+            icon:
+                const Icon(Icons.arrow_drop_down, color: AppTheme.accentColor),
+            isExpanded: true,
+            dropdownColor: AppTheme.primaryColor,
+            menuMaxHeight: MediaQuery.of(context).size.height * 0.4,
+            focusColor: Colors.transparent,
+            elevation: 8,
+            underline: Container(height: 0),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Center _voiceRecognitionButton() {
+    return Center(
+      child: Column(
+        children: [
+          InkWell(
+            onTap: _isProcessing
+                ? null
+                : (_isListening ? _stopListening : _startListening),
+            borderRadius: BorderRadius.circular(50),
+            child: Container(
+              padding: const EdgeInsets.all(15),
+              decoration: BoxDecoration(
+                color: _isProcessing
+                    ? AppTheme.greyColor
+                    : _isListening
+                        ? AppTheme.accentColor
+                        : AppTheme.greyColor,
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.1),
+                    blurRadius: 10,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: Icon(
+                _isProcessing
+                    ? Icons.hourglass_top
+                    : _isListening
+                        ? Icons.mic
+                        : Icons.mic_none,
+                color: _isProcessing
+                    ? AppTheme.accentColor
+                    : _isListening
+                        ? Colors.white
+                        : AppTheme.accentColor,
+                size: 40,
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _isProcessing
+                ? "Processing speech with AI..."
+                : _isListening
+                    ? "Listening in Sinhala..."
+                    : "Tap to speak destination & seats",
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: AppTheme.accentColor,
+                  fontWeight: FontWeight.w500,
+                ),
+          ),
+          if (_lastWords.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 12.0, bottom: 12.0),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: AppTheme.lightGreyColor,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: AppTheme.accentColor.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  children: [
+                    Text(
+                      'Transcribed Sinhala:',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: AppTheme.accentColor.withValues(alpha: 0.7),
+                            fontWeight: FontWeight.bold,
+                          ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _lastWords,
+                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: AppTheme.accentColor,
+                            fontStyle: _isListening
+                                ? FontStyle.italic
+                                : FontStyle.normal,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: SafeArea(
+        child: Column(
+          children: [
+            Expanded(
+              child: Stack(
+                children: [
+                  SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const SizedBox(height: 20),
+                          const Center(child: AppLogo()),
+                          const SizedBox(height: 30),
+                          _voiceRecognitionButton(),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Bus Number',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 10),
+                          _buildBusNumberDropdown(),
+                          if (_availableSeats != null)
+                            Padding(
+                              padding:
+                                  const EdgeInsets.only(top: 8.0, bottom: 8.0),
+                              child: Text(
+                                'Remaining Seats: $_availableSeats',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: (_availableSeats ?? 0) == 0
+                                          ? AppTheme.redColor
+                                          : AppTheme.greenColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                              ),
+                            ),
+                          if (_busFullError != null)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8.0),
+                              child: Text(
+                                _busFullError!,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: AppTheme.redColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                              ),
+                            ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Pickup Location',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 10),
+                          _buildDropdown(
+                            value: _selectedPickupLocation,
+                            items: _pickupLocations,
+                            hint: _selectedBusNumber == null
+                                ? 'Select a bus number first'
+                                : _isLoading
+                                    ? 'Loading locations...'
+                                    : 'Select pickup location',
+                            onChanged: _selectedBusNumber == null || _isLoading
+                                ? null
+                                : (value) {
+                                    setState(() {
+                                      _selectedPickupLocation = value;
+                                    });
+                                  },
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Destination',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _destinationController,
+                            decoration: InputDecoration(
+                              hintText: 'Enter destination',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(
+                                    color: AppTheme.accentColor),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(
+                                    color: AppTheme.accentColor, width: 2.0),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          Text(
+                            'Seat Count',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const SizedBox(height: 10),
+                          TextField(
+                            controller: _seatCountController,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                            ],
+                            decoration: InputDecoration(
+                              hintText: 'Enter number of seats',
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(
+                                    color: AppTheme.accentColor),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(10.0),
+                                borderSide: const BorderSide(
+                                    color: AppTheme.accentColor, width: 2.0),
+                              ),
+                            ),
+                            onChanged: (value) {
+                              setState(() {});
+                            },
+                          ),
+                          const SizedBox(height: 30),
+                          if (_seatCountController.text.isNotEmpty)
+                            CustomButton(
+                              width: MediaQuery.sizeOf(context).width,
+                              text:
+                                  'Pay Total ${_calculateTotalPrice().toStringAsFixed(0)}',
+                              onPressed: _submitTicket,
+                            ),
+                          const SizedBox(height: 20),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (_isLoading)
+                    Container(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.all(24),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.1),
+                                blurRadius: 12,
+                                spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const CircularProgressIndicator(
+                                color: AppTheme.accentColor,
+                                strokeWidth: 3,
+                              ),
+                              const SizedBox(height: 16),
+                              Text(
+                                _selectedBusNumber != null &&
+                                        _pickupLocations.isEmpty
+                                    ? 'Loading routes...'
+                                    : 'Loading...',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodyMedium
+                                    ?.copyWith(
+                                      color: AppTheme.accentColor,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
