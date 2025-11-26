@@ -18,21 +18,24 @@ import 'theme/app_theme.dart';
 import 'utils/constants.dart';
 import 'utils/config.dart';
 import 'package:flutter_gemini/flutter_gemini.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
 
   // Initialize Firebase
   await FirebaseService.initializeFirebase();
 
   // Initialize Gemini API
-  if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
+  if (AppConfig.geminiApiKey == 'AIzaSyA2spRfNLtuV5CeVaaJ-Vligmn_j6C7Cok') {
     debugPrint(
         '⚠️ WARNING: Default Gemini API key detected. Please replace with your actual API key in lib/utils/config.dart');
   }
 
   try {
-    Gemini.init(apiKey: AppConfig.geminiApiKey);
+    Gemini.init(
+        apiKey: dotenv.env['AIzaSyA2spRfNLtuV5CeVaaJ-Vligmn_j6C7Cok'] ?? '');
     debugPrint('✓ Gemini initialized successfully');
   } catch (e) {
     debugPrint('❌ Failed to initialize Gemini: $e');

@@ -67,6 +67,8 @@ class _AddBusScreenState extends State<AddBusScreen> {
     "Ratmalana",
     "Angoda",
     "Avissawella",
+    "Nittambuwa",
+    "Ruwanwella",
   ];
 
   // Selected routes
@@ -307,7 +309,8 @@ class _AddBusScreenState extends State<AddBusScreen> {
                                 // Prevent selecting more than two
                                 ScaffoldMessenger.of(context).showSnackBar(
                                   SnackBar(
-                                    content: const Text('You can select only 2 routes'),
+                                    content: const Text(
+                                        'You can select only 2 routes'),
                                     backgroundColor: AppTheme.redColor,
                                     duration: const Duration(seconds: 2),
                                   ),

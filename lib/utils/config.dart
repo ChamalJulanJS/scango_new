@@ -1,5 +1,8 @@
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+
 class AppConfig {
-  // Your Gemini API key - Get one at https://aistudio.google.com/
-  static const String geminiApiKey = 'AIzaSyBpzAcS1eDYZa75BlueJM8RXYAG1zXK1zU';
+  // Read from environment variable
+  static String get geminiApiKey =>
+      dotenv.env['AIzaSyA2spRfNLtuV5CeVaaJ-Vligmn_j6C7Cok'] ?? '';
   static bool fromDropDown = false;
 }
