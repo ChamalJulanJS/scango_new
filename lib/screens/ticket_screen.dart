@@ -462,6 +462,7 @@ If not found, use null.
 
   Future<bool> _validateDestination() async {
     try {
+      // 1. Get the bus route from Firestore
       final busDoc = await _firestore
           .collection('Buses')
           .where('busNumber', isEqualTo: _selectedBusNumber)
@@ -472,37 +473,44 @@ If not found, use null.
       final routes = List<String>.from(busDoc.docs.first.data()['route'] ?? []);
       final destination = _destinationController.text.trim();
 
-      // 1. Exact Match Check
-      // If the user typed one of the main stops exactly, allow it immediately.
+      if (routes.isEmpty) return false;
+
+      // 2. Check for Exact Matches
+      // If the passenger wants to go to the Start or End city exactly, allow it.
       if (routes.any((r) => r.toLowerCase() == destination.toLowerCase())) {
         return true;
       }
 
-      // 2. Advanced AI Route Check
-      // We construct a prompt that explains these are Start/End points in Sri Lanka.
-      String start = routes.first;
-      String end = routes.last;
+      // 3. AI Validation (The "Between" Check)
+      // We take the first and last city as the Start/End points.
+      final String start = routes.first;
+      final String end = routes.last;
 
       final prompt = """
-      I am checking a bus route in Sri Lanka.
-      The bus travels from $start to $end.
-      Is the location '$destination' situated on (or very close to) the main road route between $start and $end?
+      Context: I am validating a bus ticket in Sri Lanka.
+      Route: The bus travels from $start to $end.
+      Passenger Destination: $destination.
       
-      Answer only with 'yes' or 'no'.
+      Question: Is $destination a town or city located on the main road route between $start and $end?
+      
+      Rules:
+      - Answer "yes" if it is on the route.
+      - Answer "no" if it is far away or in a completely different direction.
+      - Answer only "yes" or "no".
       """;
 
       final response = await _gemini.prompt(parts: [Part.text(prompt)]);
 
       if (response != null && response.output != null) {
         final answer = response.output!.toLowerCase().trim();
-        // Check if the answer starts with yes (handles "Yes, it is" etc.)
+        // Returns true only if AI says "yes"
         return answer.startsWith('yes');
       }
-      return false;
+
+      return false; // Default to rejecting if AI gives no answer
     } catch (e) {
       debugPrint('Error validating destination: $e');
-      // Fallback: Allow ticket if AI fails (better to allow than block valid customers)
-      return true;
+      return false; // Strict Mode: If error occurs, don't take the destination.
     }
   }
 
