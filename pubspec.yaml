@@ -45,7 +45,6 @@ dependencies:
   firebase_storage: ^12.4.5
   speech_to_text: ^7.3.0
   flutter_gemini: ^3.0.0
-  flutter_dotenv: ^5.2.1  # Add this line
   nfc_manager: ^3.5.0
 
 dev_dependencies:
@@ -72,8 +71,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/icons/
-    - .env
-
+    
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
 

@@ -108,7 +108,7 @@ class _TicketScreenState extends State<TicketScreen> {
 
   void _initGemini() {
     try {
-      if (AppConfig.geminiApiKey == 'AIzaSyDslSUKSPsgiikshlUOYHNGjpjx-gBF1_k') {
+      if (AppConfig.geminiApiKey == 'AIzaSyCeSlEHdIbGTWZLOHHatd-yujY2XEz_rBw') {
         log('WARNING: Using default Gemini API key.');
       }
       Gemini.instance;
@@ -472,23 +472,36 @@ If not found, use null.
       final routes = List<String>.from(busDoc.docs.first.data()['route'] ?? []);
       final destination = _destinationController.text.trim();
 
-      if (routes.contains(destination)) return true;
+      // 1. Exact Match Check
+      // If the user typed one of the main stops exactly, allow it immediately.
+      if (routes.any((r) => r.toLowerCase() == destination.toLowerCase())) {
+        return true;
+      }
 
-      final prompt =
-          """I have a bus with the following routes: ${routes.join(', ')}. 
-      Is '$destination' included in or near these routes? Answer only with 'yes' or 'no'.""";
+      // 2. Advanced AI Route Check
+      // We construct a prompt that explains these are Start/End points in Sri Lanka.
+      String start = routes.first;
+      String end = routes.last;
 
-      final response = await _gemini.chat([
-        Content(parts: [Part.text(prompt)], role: 'user')
-      ]);
+      final prompt = """
+      I am checking a bus route in Sri Lanka.
+      The bus travels from $start to $end.
+      Is the location '$destination' situated on (or very close to) the main road route between $start and $end?
+      
+      Answer only with 'yes' or 'no'.
+      """;
+
+      final response = await _gemini.prompt(parts: [Part.text(prompt)]);
 
       if (response != null && response.output != null) {
-        final answer = response.output!.toLowerCase();
-        return answer.contains('yes');
+        final answer = response.output!.toLowerCase().trim();
+        // Check if the answer starts with yes (handles "Yes, it is" etc.)
+        return answer.startsWith('yes');
       }
       return false;
     } catch (e) {
       debugPrint('Error validating destination: $e');
+      // Fallback: Allow ticket if AI fails (better to allow than block valid customers)
       return true;
     }
   }
