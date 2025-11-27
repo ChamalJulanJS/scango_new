@@ -26,7 +26,7 @@ void main() async {
   await FirebaseService.initializeFirebase();
 
   // Initialize Gemini API
-  if (AppConfig.geminiApiKey == 'AIzaSyCeSlEHdIbGTWZLOHHatd-yujY2XEz_rBw') {
+  if (AppConfig.geminiApiKey == 'AIzaSyDAql7Fy_J1xdpYd4y3dW8beCciY4_hhQo') {
     debugPrint(
         '⚠️ WARNING: Default Gemini API key detected. Please replace with your actual API key in lib/utils/config.dart');
   }

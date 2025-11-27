@@ -108,7 +108,7 @@ class _TicketScreenState extends State<TicketScreen> {
 
   void _initGemini() {
     try {
-      if (AppConfig.geminiApiKey == 'AIzaSyCeSlEHdIbGTWZLOHHatd-yujY2XEz_rBw') {
+      if (AppConfig.geminiApiKey == 'AIzaSyDAql7Fy_J1xdpYd4y3dW8beCciY4_hhQo') {
         log('WARNING: Using default Gemini API key.');
       }
       Gemini.instance;
