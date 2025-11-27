@@ -28,6 +28,34 @@ class DataService {
     });
   }
 
+  // Add this inside your DataService class
+  Future<List<Map<String, dynamic>>> getBusRoutes() async {
+    try {
+      // This looks for the "BusRoutes" collection you just created manually
+      final snapshot = await _db.collection('BusRoutes').get();
+
+      return snapshot.docs.map((doc) {
+        // FIXED: Removed unnecessary cast
+        final data = doc.data();
+        return {
+          // These keys ('routeNumber', 'start', 'end') must match what you typed in Firebase
+          "number": data['routeNumber'] ?? "",
+          "start": data['start'] ?? "",
+          "end": data['end'] ?? "",
+          // Helper for searching
+          "searchKey": "${data['routeNumber']} ${data['start']} ${data['end']}"
+              .toLowerCase(),
+          // Helper for display
+          "display": "${data['routeNumber']}: ${data['start']} - ${data['end']}"
+        };
+      }).toList();
+    } catch (e) {
+      // FIXED: Used debugPrint instead of print
+      debugPrint("Error fetching routes: $e");
+      return [];
+    }
+  }
+
   // Bus collection operations
   CollectionReference get busesCollection => _db.collection('Buses');
 

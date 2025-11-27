@@ -26,64 +26,42 @@ class AddBusScreen extends StatefulWidget {
 class _AddBusScreenState extends State<AddBusScreen> {
   final TextEditingController _busNumberController = TextEditingController();
   final TextEditingController _seatCountController = TextEditingController();
+
+  // NEW: Controller for the clickable route field
+  final TextEditingController _routeDisplayController = TextEditingController();
+
   final DataService _dataService = DataService();
   bool _isLoading = false;
   String? _errorMessage;
   bool _isCheckingDuplicate = false;
 
-  // List of available cities (routes)
-  final List<String> colomboCities = [
-    "Colombo 01 - Fort",
-    "Colombo 02 - Slave Island",
-    "Colombo 03 - Kollupitiya",
-    "Colombo 04 - Bambalapitiya",
-    "Colombo 05 - Havelock Town",
-    "Colombo 06 - Wellawatte",
-    "Colombo 07 - Cinnamon Gardens",
-    "Colombo 08 - Borella",
-    "Colombo 09 - Dematagoda",
-    "Colombo 10 - Maradana",
-    "Colombo 11 - Pettah",
-    "Colombo 12 - Hulftsdorp",
-    "Colombo 13 - Kotahena",
-    "Colombo 14 - Grandpass",
-    "Colombo 15 - Mutwal",
-    "Dehiwala",
-    "Mount Lavinia",
-    "Maharagama",
-    "Kottawa",
-    "Nugegoda",
-    "Rajagiriya",
-    "Kotte",
-    "Battaramulla",
-    "Pelawatte",
-    "Thalawathugoda",
-    "Boralesgamuwa",
-    "Homagama",
-    "Pannipitiya",
-    "Padukka",
-    "Kesbewa",
-    "Moratuwa",
-    "Ratmalana",
-    "Angoda",
-    "Avissawella",
-    "Nittambuwa",
-    "Ruwanwella",
-  ];
+  // NEW: Stores the list of routes downloaded from Firebase
+  List<Map<String, dynamic>> _allRoutes = [];
+  bool _isLoadingRoutes = true;
 
-  // Selected routes
+  // Selected routes (Stores the Start and End city for the database)
   final List<String> _selectedRoutes = [];
 
   @override
   void initState() {
     super.initState();
-    // Add listener to bus number controller for auto uppercase
+
+    // 1. Load the routes from Firebase when the screen starts
+    _loadRoutes();
+
     _busNumberController.addListener(_onBusNumberChanged);
-    // Check if user has any buses
+
+    // Check if user is editing an existing bus
     if (widget.isEditing) {
       _busNumberController.text = widget.busNumber ?? '';
       _seatCountController.text = widget.totalSeats?.toString() ?? '';
       _selectedRoutes.addAll(widget.route ?? []);
+
+      // If editing, show the existing route in the text box
+      if (_selectedRoutes.length >= 2) {
+        _routeDisplayController.text =
+            "${_selectedRoutes[0]} - ${_selectedRoutes[1]}";
+      }
     }
   }
 
@@ -92,7 +70,123 @@ class _AddBusScreenState extends State<AddBusScreen> {
     _busNumberController.removeListener(_onBusNumberChanged);
     _busNumberController.dispose();
     _seatCountController.dispose();
+    _routeDisplayController.dispose(); // Don't forget to dispose this
     super.dispose();
+  }
+
+  // --- NEW: Fetch Routes Logic ---
+  Future<void> _loadRoutes() async {
+    // This calls the function you added to DataService in Step 2
+    final routes = await _dataService.getBusRoutes();
+    routes.sort((a, b) {
+      String numA = a['number'].toString();
+      String numB = b['number'].toString();
+      return numA.compareTo(numB); // Ascending order (01, 02, 100...)
+    });
+
+    if (mounted) {
+      setState(() {
+        _allRoutes = routes;
+        _isLoadingRoutes = false;
+      });
+    }
+  }
+
+  // --- NEW: Search Popup Logic ---
+  void _openRouteSearch() {
+    if (_isLoadingRoutes) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Loading routes, please wait...")),
+      );
+      return;
+    }
+
+    if (_allRoutes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No routes found in database.")),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        String query = "";
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            // Filter the list based on what user types
+            final filtered = _allRoutes.where((r) {
+              return r['searchKey'].contains(query.toLowerCase());
+            }).toList();
+
+            return AlertDialog(
+              title: const Text("Select Bus Route",
+                  style: TextStyle(color: AppTheme.accentColor)),
+              content: SizedBox(
+                height: 400, // Fixed height for the popup list
+                width: double.maxFinite,
+                child: Column(
+                  children: [
+                    // Search Box inside the dialog
+                    TextField(
+                      decoration: InputDecoration(
+                        hintText: "Search (e.g. 138, Pettah)",
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                            vertical: 0, horizontal: 10),
+                      ),
+                      onChanged: (val) {
+                        setDialogState(() => query = val);
+                      },
+                    ),
+                    const SizedBox(height: 10),
+
+                    // List of Results
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: filtered.length,
+                        itemBuilder: (context, index) {
+                          final route = filtered[index];
+                          return ListTile(
+                            title: Text(
+                              route['display'],
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w500),
+                            ),
+                            onTap: () {
+                              // When a user clicks a row, save it and close dialog
+                              setState(() {
+                                _selectedRoutes.clear();
+                                _selectedRoutes.add(route['start']);
+                                _selectedRoutes.add(route['end']);
+                                _routeDisplayController.text = route['display'];
+                              });
+                              Navigator.pop(context);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(15)),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text("Cancel",
+                      style: TextStyle(color: Colors.grey)),
+                )
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   void _onBusNumberChanged() {
@@ -134,7 +228,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
         });
       }
     } catch (e) {
-      // Silently fail on duplicate check, will validate again on submit
+      // Silently fail
     } finally {
       if (mounted) {
         setState(() {
@@ -146,7 +240,6 @@ class _AddBusScreenState extends State<AddBusScreen> {
 
   // Validate bus number format
   bool _isValidBusNumber(String busNumber) {
-    // Check if bus number has only allowed characters: A-Z, 0-9, -
     final RegExp validFormat = RegExp(r'^[A-Z0-9\-]+$');
     return validFormat.hasMatch(busNumber);
   }
@@ -167,7 +260,7 @@ class _AddBusScreenState extends State<AddBusScreen> {
     }
 
     if (_selectedRoutes.length != 2) {
-      _showError('Please select exactly 2 cities for the route');
+      _showError('Please select a valid bus route');
       return;
     }
 
@@ -189,7 +282,6 @@ class _AddBusScreenState extends State<AddBusScreen> {
 
     try {
       if (widget.isEditing && widget.busId != null) {
-        // Update existing bus (bus number is read-only when editing)
         await _dataService.busesCollection.doc(widget.busId!).update({
           'route': _selectedRoutes,
           'totalSeats': seatCount,
@@ -205,7 +297,6 @@ class _AddBusScreenState extends State<AddBusScreen> {
           Navigator.pop(context, true);
         }
       } else {
-        // Check for duplicate bus number before adding
         final isDuplicate = await _dataService.isBusNumberExists(busNumber);
         if (isDuplicate) {
           _showError('Bus number already exists');
@@ -215,7 +306,6 @@ class _AddBusScreenState extends State<AddBusScreen> {
           return;
         }
 
-        // Add bus to Firestore
         await _dataService.addBus(
           busNumber: busNumber,
           route: _selectedRoutes,
@@ -225,11 +315,11 @@ class _AddBusScreenState extends State<AddBusScreen> {
         // Clear fields
         _busNumberController.clear();
         _seatCountController.clear();
+        _routeDisplayController.clear(); // Clear the new controller too
         setState(() {
           _selectedRoutes.clear();
         });
 
-        // Show success message
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -260,121 +350,6 @@ class _AddBusScreenState extends State<AddBusScreen> {
         content: Text(message),
         backgroundColor: AppTheme.redColor,
       ),
-    );
-  }
-
-  // Function to show the multi-select dropdown
-  Future<void> _showMultiSelectDialog() async {
-    await showDialog(
-      context: context,
-      builder: (ctx) {
-        // Create a local list to hold the selected items during dialog session
-        List<String> tempSelectedRoutes = List.from(_selectedRoutes);
-
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              insetPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 20),
-              title: Text(
-                'Select Exactly 2 Routes',
-                style: TextStyle(
-                  color: AppTheme.accentColor,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-              content: SizedBox(
-                width: double.maxFinite,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: colomboCities.map((city) {
-                      return CheckboxListTile(
-                        title: Text(
-                          city,
-                          style: TextStyle(
-                            fontWeight: tempSelectedRoutes.contains(city)
-                                ? FontWeight.bold
-                                : FontWeight.normal,
-                          ),
-                        ),
-                        value: tempSelectedRoutes.contains(city),
-                        activeColor: AppTheme.accentColor,
-                        checkColor: Colors.white,
-                        onChanged: (isChecked) {
-                          setState(() {
-                            if (isChecked!) {
-                              if (tempSelectedRoutes.length >= 2) {
-                                // Prevent selecting more than two
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(
-                                    content: const Text(
-                                        'You can select only 2 routes'),
-                                    backgroundColor: AppTheme.redColor,
-                                    duration: const Duration(seconds: 2),
-                                  ),
-                                );
-                              } else {
-                                tempSelectedRoutes.add(city);
-                              }
-                            } else {
-                              tempSelectedRoutes.remove(city);
-                            }
-                          });
-                        },
-                        secondary: tempSelectedRoutes.contains(city)
-                            ? Icon(Icons.location_on,
-                                color: AppTheme.accentColor)
-                            : Icon(Icons.location_on_outlined,
-                                color: Colors.grey),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-              actions: <Widget>[
-                TextButton(
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey,
-                  ),
-                  child: const Text('Cancel'),
-                  onPressed: () => Navigator.pop(context),
-                ),
-                ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppTheme.accentColor,
-                    foregroundColor: Colors.white,
-                  ),
-                  child: const Text('Save'),
-                  onPressed: () {
-                    if (tempSelectedRoutes.length != 2) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: const Text('Please select exactly 2 routes'),
-                          backgroundColor: AppTheme.redColor,
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                      return;
-                    }
-                    // Update the actual selected routes
-                    this.setState(() {
-                      _selectedRoutes.clear();
-                      _selectedRoutes.addAll(tempSelectedRoutes);
-                    });
-                    Navigator.pop(context);
-                  },
-                ),
-              ],
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(15),
-              ),
-              actionsPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            );
-          },
-        );
-      },
     );
   }
 
@@ -434,70 +409,46 @@ class _AddBusScreenState extends State<AddBusScreen> {
                               : null,
                         ),
                       ),
+
                       const SizedBox(height: 20),
+
+                      // --- UPDATED ROUTE SECTION ---
                       Text(
-                        'Route',
+                        'Bus Route',
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                       const SizedBox(height: 10),
-                      Material(
-                        color: Colors.transparent,
-                        child: InkWell(
-                          onTap: _showMultiSelectDialog,
-                          borderRadius: BorderRadius.circular(10),
-                          child: Ink(
-                            decoration: BoxDecoration(
-                              border: Border.all(color: AppTheme.accentColor),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 15),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: _selectedRoutes.isEmpty
-                                        ? Text(
-                                            'Select cities for route',
-                                            style: TextStyle(
-                                              color: Colors.grey[600],
-                                            ),
-                                          )
-                                        : Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                '${_selectedRoutes.length} cities selected',
-                                                style: TextStyle(
-                                                  color: AppTheme.accentColor,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                _selectedRoutes.join(', '),
-                                                style: Theme.of(context)
-                                                    .textTheme
-                                                    .bodyMedium,
-                                                overflow: TextOverflow.ellipsis,
-                                                maxLines: 1,
-                                              ),
-                                            ],
-                                          ),
-                                  ),
-                                  Icon(
-                                    Icons.arrow_drop_down,
-                                    color: AppTheme.accentColor,
-                                    size: 28,
-                                  ),
-                                ],
-                              ),
-                            ),
+                      TextField(
+                        controller: _routeDisplayController,
+                        readOnly: true, // User cannot type here manually
+                        onTap: _openRouteSearch, // Open search on tap
+                        decoration: InputDecoration(
+                          hintText: 'Tap to search route',
+                          suffixIcon: const Icon(Icons.arrow_drop_down,
+                              color: AppTheme.accentColor),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10.0),
+                            borderSide:
+                                const BorderSide(color: AppTheme.accentColor),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10.0),
+                            borderSide: const BorderSide(
+                                color: AppTheme.accentColor, width: 2.0),
                           ),
                         ),
                       ),
+                      if (_selectedRoutes.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 5.0, left: 5.0),
+                          child: Text(
+                            "Tap above to select a route from the list",
+                            style: TextStyle(
+                                fontSize: 12, color: Colors.grey[600]),
+                          ),
+                        ),
+                      // ---------------------------
+
                       const SizedBox(height: 20),
                       Text(
                         'Seat Count',

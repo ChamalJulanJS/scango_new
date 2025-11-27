@@ -45,7 +45,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     });
 
     // Small delay for UX
-    await Future.delayed(const Duration(milliseconds: 500));
+    await Future.delayed(const Duration(seconds: 5));
 
     if (!mounted) return;
 
